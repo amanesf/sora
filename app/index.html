@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="ja">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1.0, viewport-fit=cover, user-scalable=no"
+    />
+    <title>空を歩く、光を編む</title>
+  </head>
+  <body>
+
+    <!-- Nothing is shown until the first real frame exists.
+         The class is set here rather than from the module script so it applies
+         before the first paint: main.ts is a module and therefore deferred, so
+         by the time it could add a class the browser has already shown the page
+         once, which is the flash this exists to prevent. main.ts takes it off
+         again when the photograph has settled and the scene has actually been
+         drawn (see the boot gate there). -->
+    <script>document.documentElement.classList.add('is-booting');</script>
+    <div class="boot" aria-hidden="true"></div>
+
+    <!-- The canvas covers the whole page and sits behind everything, so the
+         picture and the cloud echo under it are drawn in one frame by the GPU
+         with nothing read back (core/compose.ts). `.stage` below reserves the
+         band, tells the compose pass where to put the picture — and, unlike in
+         the window app, takes the pointer: it is the water you press. -->
+    <div id="app" aria-hidden="true"></div>
+
+    <header class="title">
+      <h1 class="title__main">空を歩く、光を編む</h1>
+      <div class="title__rule" aria-hidden="true"></div>
+      <p class="title__sub">Walking the Sky, Weaving the Light</p>
+    </header>
+
+    <div class="stage">
+      <!-- The only instruction the app gives. It fades on the first press
+           (style.css's .stage.is-touched) and does not come back. -->
+      <p class="stage__hint">水面にふれる</p>
+    </div>
+
+    <footer class="console"></footer>
+
+    <!-- Below the console, in the darkness the canvas paints at the foot of the
+         page. Static copy, so it lives here rather than being built in JS like
+         the console is. -->
+    <section class="story">
+      <p>雨が上がったばかりのアスファルトに、空がひとつ落ちていた。</p>
+      <p>踏めば壊れるとわかっていて、それでも彼女は足をおろす。水面が波紋をひろげ、雲は形を失い、割れた光が縫い目のように走った。——それから、何ごともなかったように空が戻ってくる。</p>
+      <p>いくら踏んでも減らないものがある。そのことを確かめるためだけに、彼女はもう一歩、空を歩く。</p>
+    </section>
+
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 48 48">
+  <!-- Wet asphalt, a puddle with a cloud in it, and one ring going out. -->
+  <rect width="48" height="48" rx="8" fill="#12161d"/>
+  <ellipse cx="24" cy="27" rx="18" ry="13" fill="#1c62a8"/>
+  <path d="M11 24a5 5 0 0 1 .9-9.9A6.4 6.4 0 0 1 24.3 15 4.6 4.6 0 0 1 25 24H11Z" fill="#eef6ff" opacity="0.92"/>
+  <ellipse cx="24" cy="30" rx="9" ry="4.6" fill="none" stroke="#cfe8ff" stroke-opacity="0.75" stroke-width="1.3"/>
+  <ellipse cx="24" cy="30" rx="4.4" ry="2.2" fill="none" stroke="#cfe8ff" stroke-opacity="0.45" stroke-width="1"/>
+</svg>

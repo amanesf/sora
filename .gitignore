@@ -1,0 +1,7 @@
+# Never commit API keys/secrets (e.g. GEMINI_KEY) — pass them as env vars only.
+.env
+.env.*
+*.key
+
+node_modules
+dist

@@ -1,0 +1,655 @@
+:root {
+  color-scheme: dark;
+
+  /* The picture is deliberately wider than the phone and hangs off both edges:
+     10% of the screen width past the left, 5% past the right. So it is 115%
+     wide and shifted -10%, and the body clips the rest. Bleeding the image off
+     the edges is what stops a landscape picture reading as a small letterboxed
+     card floating in a portrait page. */
+  --bleed-left: 10vw;
+  --bleed-right: 5vw;
+
+  /* The reference frame (core/frame.ts FRAME_WIDTH/HEIGHT). Anything taller
+     than what this aspect gives is not stretched — core/frame.ts crops a
+     sub-rect instead, so the clouds keep their scale. */
+  --plate-aspect: 1.8333;
+
+  /* Ceiling for how much of a tall screen the picture may take, so a desktop
+     window (or a very tall phone) doesn't hand the whole page to the sky and
+     leave the console squashed at the bottom. */
+  --stage-max-height: 46vh;
+
+  /* The page's palette. Deep ink at the foot of the page rising to a lit blue
+     behind the picture — the same direction the sky itself runs, so the page
+     reads as one continuous graded field rather than a photo pasted on black.
+     Sampled off the plate's own sky so the spill looks like light coming from
+     the picture rather than a coloured panel behind it. */
+  /* Darker than it was. The first pass lit the whole page to a mid blue, and a
+     page that is all one value has no light in it — the picture stopped being
+     the brightest thing on screen, which is the entire premise. The glow is now
+     tight around the picture and everything else falls away to ink. */
+  /* The page's palette. The canvas paints the graded field itself
+     (core/compose.ts, which carries the same values in GLSL); these are kept
+     for the parts CSS still draws — the body's own backdrop before the first
+     frame arrives, and the type. */
+  --ink: #03050a;
+
+  --text: #eaf2f8;
+  --text-dim: rgba(217, 233, 245, 0.5);
+  --accent: #7cc6f0;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  background: var(--ink);
+  overscroll-behavior: none;
+  touch-action: none;
+}
+
+/* Portrait phone, top to bottom: title, picture, console. The console sits
+   directly under the picture rather than being pushed to the foot of the
+   screen — everything the eye needs is in the upper two thirds, and the space
+   below it is the graded darkness the canvas paints, not a gap. */
+body {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+}
+
+/* Everything above the canvas, which paints the page's light itself
+   (core/compose.ts). */
+.title,
+.stage,
+.console,
+.story {
+  position: relative;
+  z-index: 1;
+}
+
+/* --- Title ------------------------------------------------------------- */
+
+.title {
+  flex: none;
+  padding: calc(env(safe-area-inset-top) + 22px) 16px 16px;
+  text-align: center;
+}
+
+.title__main {
+  margin: 0;
+  /* Mincho for the Japanese line. A serif face is what makes a nostalgic
+     summer title read as a title rather than as UI chrome, and the stack falls
+     back through the faces actually present on iOS, Android and Windows before
+     reaching the generic serif. */
+  font-family: 'Hiragino Mincho ProN', 'Yu Mincho', YuMincho, 'Noto Serif JP',
+    'Source Han Serif', serif;
+  font-size: clamp(17px, 4.6vw, 26px);
+  font-weight: 500;
+  letter-spacing: 0.08em;
+  line-height: 1.5;
+  color: var(--text);
+  /* Three layers: a real cast shadow so the type sits above the page, a
+     tighter dark one to keep it legible over the lit part of the gradient, and
+     the glow so it still looks lit by the same source rather than stamped on. */
+  text-shadow:
+    0 2px 10px rgba(0, 0, 0, 0.75),
+    0 1px 2px rgba(0, 0, 0, 0.9),
+    0 0 26px rgba(124, 198, 240, 0.4);
+}
+
+/* The rule under the title. Fades out at both ends instead of stopping, so it
+   reads as a highlight catching the type from below rather than as a border —
+   a hard-ended line would box the title in and fight the bleed-off-the-edges
+   logic the rest of the page is built on. */
+/* The rule was there in the first version and effectively invisible — a 1px
+   line at 0.75 alpha over a lit gradient reads as nothing. It carries a real
+   value now, and a small diamond sits on it: a bare line is a border, a line
+   with a mark on it is a title rule. */
+.title__rule {
+  position: relative;
+  width: min(76%, 330px);
+  height: 1px;
+  margin: 14px auto 0;
+  background: linear-gradient(
+    to right,
+    transparent,
+    rgba(150, 208, 244, 0.35) 14%,
+    rgba(226, 243, 253, 0.95) 50%,
+    rgba(150, 208, 244, 0.35) 86%,
+    transparent
+  );
+  box-shadow: 0 0 14px rgba(124, 198, 240, 0.75);
+}
+
+.title__rule::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 5px;
+  height: 5px;
+  transform: translate(-50%, -50%) rotate(45deg);
+  background: #eaf6ff;
+  box-shadow: 0 0 10px rgba(160, 214, 246, 0.95);
+}
+
+.title__sub {
+  margin: 11px 0 0;
+  font: 400 9px/1 system-ui, sans-serif;
+  letter-spacing: 0.42em;
+  /* Tracking pushes the line right by one space's worth; pulling it back keeps
+     it optically centred under the Japanese. */
+  text-indent: 0.42em;
+  text-transform: uppercase;
+  color: var(--text-dim);
+}
+
+/* --- The picture ------------------------------------------------------- */
+
+.stage {
+  flex: none;
+  width: calc(100vw + var(--bleed-left) + var(--bleed-right));
+  margin-left: calc(-1 * var(--bleed-left));
+  /* min(): normally the picture is as tall as its own aspect makes it; on a
+     short/wide viewport the cap wins and core/frame.ts crops the frame rather
+     than the CSS squashing it. */
+  height: min(
+    calc((100vw + var(--bleed-left) + var(--bleed-right)) / var(--plate-aspect)),
+    var(--stage-max-height)
+  );
+  /* The picture is the only lit object on the page, so it casts. The stage is
+     an empty spacer — the picture itself is drawn into this rectangle by the
+     canvas behind it — so the shadow is the one thing it still paints. */
+  box-shadow: 0 18px 60px -18px rgba(9, 34, 56, 0.9);
+  /* The one element on the page that takes a pointer. In the window app this
+     was a pure spacer and explicitly did not: there was nothing to press. Here
+     the picture is the control — a press on the water is what the app is for
+     (main.ts) — so the band accepts pointers and the canvas behind it, which
+     covers the whole page, still does not. */
+  pointer-events: auto;
+  cursor: crosshair;
+  position: relative;
+}
+
+/* The single instruction, sitting on the water at the foot of the picture. It
+   is not a control and must never look like one: no box, no border, and it
+   leaves for good the first time a pointer lands (main.ts adds .is-touched). */
+.stage__hint {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 8%;
+  margin: 0;
+  text-align: center;
+  font-size: 0.78rem;
+  letter-spacing: 0.34em;
+  text-indent: 0.34em;
+  color: rgba(233, 244, 255, 0.82);
+  text-shadow: 0 1px 10px rgba(2, 10, 22, 0.85);
+  pointer-events: none;
+  animation: hint-breathe 3.6s ease-in-out infinite;
+  transition: opacity 900ms ease;
+}
+
+.stage.is-touched .stage__hint {
+  opacity: 0;
+  animation: none;
+}
+
+@keyframes hint-breathe {
+  0%, 100% { opacity: 0.42; }
+  50% { opacity: 0.92; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .stage__hint { animation: none; opacity: 0.7; }
+}
+
+/* The canvas: the whole page, behind everything. It is opaque and paints the
+   page's own light as well as the picture (core/compose.ts). */
+#app {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+}
+
+#app canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+/* Softens the hard horizontal cut at the foot of the picture into the page.
+   Only the bottom edge: the top of this picture is dry asphalt in shadow and
+   already reads as an edge, while the bottom is the near lip of the puddle,
+   sliced mid-reflection. */
+.stage::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 14%;
+  pointer-events: none;
+  background: linear-gradient(to bottom, transparent, rgba(4, 6, 11, 0.85));
+}
+
+/* --- Console ----------------------------------------------------------- */
+
+/* Six rows now (cloud, rain, time, speed, fps, scene), so the console is the
+   one part of this page that grows every time something is added to it — and it
+   sits between the picture and the text, which are the two things worth looking
+   at. The spacing below is therefore tighter than a form would normally be:
+   most of what separates two rows is not the gap but the empty height of the
+   row itself, since a slider's track is 2px inside a box sized for a thumb. */
+.console {
+  flex: none;
+  padding: 12px max(18px, env(safe-area-inset-left)) 0 max(18px, env(safe-area-inset-right));
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+/* A thin lit line rather than a chunky slider — the same visual family as the
+   title's glow, so the console reads as one instrument. Four of them now
+   (cloud, rain, time, speed) plus the frame rate row below, so a row has to
+   stay quiet: a fixed-width
+   label column and a fixed-width readout column keep the tracks aligned with
+   each other, which is most of what makes a stack of sliders look built rather
+   than assembled. */
+.slider {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.slider__label {
+  flex: none;
+  width: 3.6em;
+  font: 500 9px/1 system-ui, sans-serif;
+  letter-spacing: 0.22em;
+  color: var(--text-dim);
+}
+
+.slider__value {
+  flex: none;
+  min-width: 3.9em;
+  text-align: right;
+  font: 600 15px/1 ui-monospace, 'SF Mono', 'Roboto Mono', monospace;
+  font-variant-numeric: tabular-nums;
+  color: var(--text);
+}
+
+.slider__value i {
+  font-style: normal;
+  font-size: 0.7em;
+  margin-left: 0.15em;
+  color: var(--text-dim);
+}
+
+.slider__input {
+  flex: 1;
+  /* Touch target, not the visual height of the track — which is 2px. Trimmed
+     from 34, which put 16px of nothing above and below every track; a slider
+     can be grabbed anywhere along its length, so it needs less height than a
+     button does to stay comfortable. */
+  height: 28px;
+  /* Chrome's UA stylesheet puts `margin: 2px` on a range input, which quietly
+     made every slider row 32px rather than the 28 asked for — four rows, so
+     16px of the console's height was a default nobody chose. */
+  margin: 0;
+  background: transparent;
+  appearance: none;
+  -webkit-appearance: none;
+  /* Set from JS on every input so the filled part of the track tracks the
+     thumb — a range input cannot express this in CSS alone. */
+  --fill: 0%;
+}
+
+.slider__input::-webkit-slider-runnable-track {
+  height: 2px;
+  border-radius: 2px;
+  background: linear-gradient(
+    to right,
+    var(--accent) 0%,
+    var(--accent) var(--fill),
+    rgba(255, 255, 255, 0.16) var(--fill),
+    rgba(255, 255, 255, 0.16) 100%
+  );
+}
+
+.slider__input::-webkit-slider-thumb {
+  appearance: none;
+  -webkit-appearance: none;
+  width: 14px;
+  height: 14px;
+  margin-top: -6px;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 0 0 5px rgba(124, 198, 240, 0.18), 0 0 14px rgba(124, 198, 240, 0.8);
+}
+
+.slider__input::-moz-range-track {
+  height: 2px;
+  border-radius: 2px;
+  background: rgba(255, 255, 255, 0.16);
+}
+
+.slider__input::-moz-range-progress {
+  height: 2px;
+  border-radius: 2px;
+  background: var(--accent);
+}
+
+.slider__input::-moz-range-thumb {
+  width: 14px;
+  height: 14px;
+  border: 0;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 0 0 5px rgba(124, 198, 240, 0.18), 0 0 14px rgba(124, 198, 240, 0.8);
+}
+
+/* The frame rate pair (ui/controls.ts). It sits in a `.slider` row so it keeps
+   the console's three-column rhythm, and it is pushed to the right so the two
+   numbers land in the same column as the sliders' readouts — the console then
+   still reads as one instrument with one right edge, rather than as a stack of
+   sliders with a widget bolted underneath. */
+.segment {
+  flex: 1;
+  display: flex;
+  justify-content: flex-end;
+  gap: 6px;
+}
+
+.segment__button {
+  min-width: 3.4em;
+  padding: 6px 0;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 999px;
+  background: transparent;
+  font: 600 13px/1 ui-monospace, 'SF Mono', 'Roboto Mono', monospace;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-dim);
+  cursor: pointer;
+  /* Kept taller than the slider rows. A button has to be hit, not swept, so it
+     is the one control here that cannot give up much height. */
+  height: 30px;
+  transition: color 120ms ease, border-color 120ms ease, box-shadow 120ms ease;
+}
+
+/* Selected. The same lit-line family as the slider thumb: an accent edge and a
+   soft glow rather than a filled chip, so the console stays drawn in light. */
+.segment__button[aria-pressed='true'] {
+  border-color: var(--accent);
+  color: var(--text);
+  box-shadow: 0 0 0 3px rgba(124, 198, 240, 0.14), 0 0 14px rgba(124, 198, 240, 0.45);
+}
+
+/* --- Settings panel ---------------------------------------------------- */
+
+/* The fold that holds the sliders and the frame rate (ui/controls.ts).
+ *
+ * A <details> with the disclosure triangle taken off and a chevron of our own
+ * put on, because the UA triangle is a black glyph in a console drawn entirely
+ * in thin lit lines. Everything else about the element is left alone — it opens,
+ * closes, takes focus and answers the keyboard without a line of script.
+ */
+.panel {
+  border-top: 1px solid rgba(150, 208, 244, 0.12);
+  margin-top: 3px;
+}
+
+.panel__summary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 30px;
+  cursor: pointer;
+  list-style: none;
+  /* The row is a control, and a control that selects its own label when
+     double-tapped feels broken. */
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* Both engines' ways of spelling "no disclosure triangle". */
+.panel__summary::-webkit-details-marker {
+  display: none;
+}
+
+.panel__summary::marker {
+  content: '';
+}
+
+.panel__label {
+  /* The same instrument type as a slider's label, so the fold reads as one more
+     row of the console rather than as a header above it. */
+  font: 500 9px/1 system-ui, sans-serif;
+  letter-spacing: 0.22em;
+  color: var(--text-dim);
+}
+
+/* A chevron drawn from two borders: no glyph, no asset, and it inherits the
+   colour of the line family around it. */
+.panel__chevron {
+  width: 6px;
+  height: 6px;
+  border-right: 1px solid rgba(150, 208, 244, 0.55);
+  border-bottom: 1px solid rgba(150, 208, 244, 0.55);
+  transform: rotate(45deg) translate(-2px, -2px);
+  transition: transform 160ms ease;
+}
+
+.panel[open] .panel__chevron {
+  transform: rotate(-135deg) translate(-2px, -2px);
+}
+
+.panel__summary:hover .panel__label,
+.panel__summary:focus-visible .panel__label {
+  color: var(--text);
+}
+
+.panel__body {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  padding-bottom: 6px;
+}
+
+/* --- Story ------------------------------------------------------------- */
+
+/* The text at the foot of the page.
+ *
+ * It takes the space left under the console rather than a fixed height, and
+ * scrolls inside itself if there is not enough of it. That matters more than it
+ * looks: html/body are `overflow: hidden` with `touch-action: none` on purpose
+ * — this is a thing you look at, not a document you scroll, and a sky that
+ * slides off the top when a thumb brushes it is broken. But the copy is a fixed
+ * number of characters and the space under the console is not, so on a short
+ * screen something has to give. Confining the scroll to this box gives it
+ * somewhere to go without letting the picture move.
+ */
+.story {
+  /* min-height: 0 is what allows a flex child to be *smaller* than its content
+     and therefore to scroll at all. Without it this box grows to fit the text
+     and pushes the page out. */
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 14px max(18px, env(safe-area-inset-left))
+    max(12px, env(safe-area-inset-bottom)) max(18px, env(safe-area-inset-right));
+  /* The page as a whole refuses touch scrolling; this box allows it vertically,
+     so a thumb inside the text scrolls the text and nothing else. */
+  touch-action: pan-y;
+  scrollbar-width: none;
+}
+
+.story::-webkit-scrollbar {
+  display: none;
+}
+
+/* No space between paragraphs — an indent instead, which is how Japanese prose
+   has always marked them. A blank line and an indent are two ways of saying the
+   same thing, and only one of them costs height: three paragraphs at the old
+   1.1em spent 28px saying what 一字下げ says for free. */
+.story p {
+  margin: 0;
+  text-indent: 1em;
+  /* The same mincho stack as the title. The console is instrument type — small,
+     tracked, sans — and this is not that; it is the thing the instrument is
+     for, so it takes the title's voice rather than the console's. */
+  font-family: 'Hiragino Mincho ProN', 'Yu Mincho', YuMincho, 'Noto Serif JP',
+    'Source Han Serif', serif;
+  /* One step up from 12.5. The console folds away now, so the text is no longer
+     competing with six rows of controls for the space under the picture, and it
+     can be set at a size meant for reading rather than at the size that fitted. */
+  font-size: 14px;
+  font-weight: 400;
+  /* Open leading. Japanese set solid is a wall, and this is meant to be read
+     slowly, at the bottom of a dark page, under a sky that keeps moving.
+     1.85 rather than the 2.15 this started at. A phone's browser chrome takes
+     about 120px of the viewport that a desktop measurement never sees — on the
+     real device the last line was cut in half — and with the picture and the
+     console both earning their height, eight lines of leading is where it has
+     to come from. Still inside the 1.8-2.0 Japanese body text is normally set
+     at, and the paragraphs are marked by indent rather than by space. */
+  line-height: 1.85;
+  letter-spacing: 0.05em;
+  text-align: justify;
+  /* Proper kinsoku: no 。 or 」 starting a line, no 「 ending one. */
+  line-break: strict;
+  /* White, and fully opaque. This was a dimmed blue-white at 0.62, which put it
+     below the title and the console in the page's hierarchy — appropriate when
+     it was a caption under an instrument, wrong now that it is the thing at the
+     foot of the page you are meant to read. The shadow is what keeps it legible
+     where the canvas paints its lighter passages behind the text. */
+  color: #ffffff;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.65);
+}
+
+.story p:last-child {
+  margin-bottom: 0;
+}
+
+/* --- Boot and scene change --------------------------------------------- */
+
+/* The curtain over the whole page until the first frame is real.
+ *
+ * Everything on this page arrives at a different time: the module is parsed and
+ * the shaders compiled, the plate downloads, the cloud field is built, and the
+ * shadow map is only correct after the render loop has run a few times. Shown
+ * as they arrive, that is a title on black, then a black band where the picture
+ * goes, then a sky with no illustration in front of it, then finally the
+ * picture — four states, none of which is the thing.
+ *
+ * So the page is covered until it is finished and then revealed once. The
+ * curtain is the same ink the body is painted in, so there is no visible edge
+ * between them and the fade reads as the picture coming up rather than as a
+ * panel sliding off.
+ */
+.boot {
+  position: fixed;
+  inset: 0;
+  z-index: 10;
+  background: var(--ink);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 520ms ease;
+}
+
+.is-booting .boot {
+  opacity: 1;
+  /* While it is up it takes the taps too: the console underneath is live from
+     the moment it is built, and a slider that can be dragged behind a curtain
+     is a slider that moves without the user seeing what it did. */
+  pointer-events: auto;
+}
+
+/* Nothing under the curtain fades in on its own — the curtain lifting is the
+   fade. Held at zero opacity as well as covered so a browser that skips the
+   transition still never paints a half-built page. */
+.is-booting .title,
+.is-booting .stage,
+.is-booting .console,
+.is-booting .story {
+  opacity: 0;
+}
+
+.title,
+.stage,
+.console,
+.story {
+  transition: opacity 520ms ease;
+}
+
+/* Changing scene: the picture blurs out, swaps, and comes back.
+ *
+ * A scene change is a plate download, a camera re-aim and a new horizon, and
+ * they do not land on the same frame. Cut straight between them and what shows
+ * is a frame or two of the new sky behind the old illustration, which reads as
+ * a glitch. Blurring across the swap hides the seam, and — the actual reason to
+ * prefer it over a plain crossfade — it is what a change of place feels like:
+ * the picture goes out of focus, becomes somewhere else, and comes back.
+ *
+ * On the canvas rather than on the page, so the title and the text stay sharp
+ * and legible throughout; only the thing that is changing is disturbed. The
+ * filter runs for about half a second per press, which is affordable where
+ * running it every frame would not be.
+ */
+#app {
+  transition: filter 300ms ease, opacity 300ms ease;
+}
+
+.is-swapping #app {
+  filter: blur(14px) saturate(1.15);
+  opacity: 0.45;
+}
+
+/* --- Measurement mode -------------------------------------------------- */
+
+/* `?fit=frame`, set by main.ts; see scripts/README.md.
+ *
+ * Every statistic in this project is computed by comparing a capture against
+ * the reference image at its own 1408x768, so the harness needs a way to ask
+ * for exactly that frame and nothing else. In the normal portrait layout the
+ * canvas is a band whose aspect comes from the viewport width and the height
+ * cap, which is right for the app and useless for measurement — at a 1408x768
+ * capture viewport it produces a 1619x353 strip, i.e. a heavy crop.
+ *
+ * This hands the whole viewport to the picture and hides every piece of page
+ * chrome, so a capture is the render and nothing else. In this mode the
+ * composer also writes straight to the canvas rather than going through
+ * core/compose.ts, which keeps the measured frame byte-exact.
+ * `?fit=page` captures the real layout. */
+.fit-frame .title,
+.fit-frame .console,
+.fit-frame .story,
+.fit-frame .boot {
+  display: none;
+}
+
+/* The harness counts rAF ticks and reads the canvas out directly, so a curtain
+   over the page would be invisible to it — but the opacity rules above are not,
+   and a stage held at zero would be. Measurement mode opts out of the whole
+   mechanism. */
+.fit-frame .stage {
+  opacity: 1 !important;
+}
+
+.fit-frame .stage {
+  width: 100vw;
+  margin-left: 0;
+  height: 100vh;
+  box-shadow: none;
+}
+
+.fit-frame .stage::after {
+  display: none;
+}
