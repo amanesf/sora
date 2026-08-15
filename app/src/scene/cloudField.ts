@@ -246,8 +246,12 @@ const TIERS: TierSpec[] = [
     // start at 0.12 rather than being what an empty sky is full of. As the sky
     // closes over they are absorbed into the deck rather than surviving under
     // it.
+    // Thinned as well, and this tier is the one that most needs it: ten slots
+    // of small cloud scattered at 6-16km is exactly the "field of little lumps"
+    // that a clean tower cannot be read against. Enough are left to say the air
+    // is unstable, which is what justifies the tower standing in it at all.
     coverageAt: (w) =>
-      THREE.MathUtils.smoothstep(w, 0.12, 0.4) * (1 - 0.8 * THREE.MathUtils.smoothstep(w, 0.6, 0.95)),
+      THREE.MathUtils.smoothstep(w, 0.30, 0.72) * (1 - 0.8 * THREE.MathUtils.smoothstep(w, 0.6, 0.95)),
     shapeFor: (rand, w) => convectiveShape(rand, w, false),
   },
   {
@@ -268,7 +272,15 @@ const TIERS: TierSpec[] = [
     // tower measure 65-79% covered while the tower's own bands measure 25-31%.
     // Anything less than full coverage here left the lower sky too open, which
     // is the one place the eye reads "this is not the reference".
-    coverageAt: (w) => THREE.MathUtils.smoothstep(w, 0.3, 0.8),
+    // Opened up from smoothstep(w, 0.3, 0.8), which put this tier at 0.51 at
+    // CLOUD's 0.56 — 13 of 26 slots of 3-5.5km deck, in front of and around the
+    // tower, in a puddle that images a band a few degrees tall. That is what
+    // fills the water with cloud, and it is what a 入道雲 has to be picked out
+    // *from*. The note above about the reference's bands being 65-79% covered
+    // is a statement about a window's whole view; the water is not that view,
+    // it is a magnified strip of it, and a coverage that reads as "busy sky"
+    // through a window reads as "no sky" through this.
+    coverageAt: (w) => THREE.MathUtils.smoothstep(w, 0.44, 0.94),
     shapeFor: (rand, w) => convectiveShape(rand, w, true),
   },
   {
@@ -284,7 +296,8 @@ const TIERS: TierSpec[] = [
     levels: 3,
     puffsPerLevel: 8,
     margin: 8,
-    coverageAt: (w) => THREE.MathUtils.smoothstep(w, 0.25, 0.75),
+    // Same reasoning as deck-near, one tier further out.
+    coverageAt: (w) => THREE.MathUtils.smoothstep(w, 0.40, 0.90),
     shapeFor: (rand, w) => convectiveShape(rand, w, true),
   },
   {

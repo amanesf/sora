@@ -251,7 +251,25 @@ export const FINAL_WHITE = 1.9;
  * separation and the blue where they were before the light was raised, not
  * enough to be a second look.
  */
-export const FINAL_SATURATION = 1.26;
+/**
+ * 1.10, down from 1.26 — and down past the 1.16 it had before the light was
+ * raised, which is the part that is not a retreat.
+ *
+ * Saturation here is a gain on distance from grey, so what it does depends
+ * entirely on what colour is already there. Measured over the cloud in the
+ * water at 1.26: the bright body ran r-b of +47 to +76 at saturation 0.20-0.30.
+ * The reference's own cloud in its own water is (248,238,214) — r-b +34,
+ * saturation 0.137. The picture was not slightly warm, it was at twice the
+ * warmth of the thing it reproduces, and a cumulonimbus at that chroma is not
+ * a white cloud in gold light, it is an orange cloud.
+ *
+ * It has to end up *below* where it started because the exposure is doing some
+ * of this job now. More light through the same hue puts more of the cloud into
+ * the range where the eye reads chroma most strongly, so holding the number
+ * where it was would have kept raising the apparent colour every time the
+ * light went up.
+ */
+export const FINAL_SATURATION = 1.10;
 export const FINAL_CONTRAST = 1.18;
 
 /** 60. Nobody is being asked to choose, so the app draws at the rate it was

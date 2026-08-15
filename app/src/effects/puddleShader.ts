@@ -270,7 +270,26 @@ export const PuddleShader = {
      * were all within 10% of 1.
      */
     uWaterGamma: { value: new THREE.Vector3(1.631, 2.355, 2.122) },
-    uWaterGain: { value: new THREE.Vector3(1.299, 1.228, 0.985) },
+    /**
+     * The blue gain comes up from 0.985 to 1.10, and this is the third of the
+     * three places the cloud was being made orange.
+     *
+     * The curve was solved from two colour pairs, and a two-point solve is only
+     * as good as its anchors: the bright one was the reference's cloud at
+     * (248,238,214), which is a *warm cream* because it is a cloud lit by a low
+     * sun and painted by an illustrator. Fitting a per-channel gain to it puts
+     * that warmth into the response of the water itself — so the water then
+     * warms everything it reflects, at every brightness, whatever the sky above
+     * it is doing. That is the wrong home for it. A cream cloud is a fact about
+     * the light; taking blue out at the surface is a claim about the water.
+     *
+     * Raising it lands hardest where it should: the gain multiplies, and the
+     * exponents mean the dark end is dominated by pow() while the bright end is
+     * dominated by this, so the cloud whitens by much more than the deep water
+     * shifts — and what the deep water does shift by, it shifts *bluer*, which
+     * is the direction the reference's navy is anyway.
+     */
+    uWaterGain: { value: new THREE.Vector3(1.299, 1.228, 1.100) },
     uPalette: { value: 1 },
   },
   vertexShader: /* glsl */ `

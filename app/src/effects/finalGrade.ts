@@ -97,7 +97,24 @@ export const FinalGradeShader = {
      * — because the two halves are already the right colours and this is a lean,
      * not a tint.
      */
-    uSplitWarm: { value: new THREE.Vector3(1.035, 1.005, 0.968) },
+    /**
+     * The warm end is nearly neutral now, and the reason is what the highlights
+     * in *this* frame are.
+     *
+     * A split-tone warms the lit half on the assumption that the lit half is
+     * ground, or skin, or architecture — something with its own colour for the
+     * sun to push. The brightest thing in this picture is a cumulonimbus, and
+     * the whole of what makes one beautiful is that it is *white*: a tower is
+     * the one subject in a landscape that reads as pure light, and every
+     * percent of warmth taken out of it is read as dirt rather than as sunlight.
+     * At 1.035/0.968 this was adding 7 points of r-b to precisely those pixels,
+     * on top of a sun tint that had already warmed them.
+     *
+     * A trace is kept, because the light really is low and gold and the frame
+     * would lie without any. The cool end is untouched — the shadow half is
+     * water and sky, and those are supposed to be blue.
+     */
+    uSplitWarm: { value: new THREE.Vector3(1.010, 1.002, 0.993) },
     uSplitCool: { value: new THREE.Vector3(0.972, 0.994, 1.042) },
   },
   vertexShader: /* glsl */ `
