@@ -379,7 +379,14 @@ export const PuddleShader = {
       // built out of. Period rather than amplitude, so what changes is how
       // often the water is struck and nothing else: the same rings, standing in
       // the same water, with twice as much still surface between them.
-      float period = mix(8.4, 2.8, uRain);
+      //
+      // Quartered again from mix(8.4, 2.8) for the same reason and by the same
+      // lever: the rain is asked to be a quarter of what it was, and the rate
+      // is where that belongs. Amplitude is not — the slider these read is an
+      // intensity and drives a ring's height along with its number, so taking
+      // it down does not thin the rain, it fades it, and a ring visible only at
+      // its loudest is not a ring.
+      float period = mix(33.6, 11.2, uRain);
       float sum = 0.0;
       for (int j = -1; j <= 1; j++) {
         for (int i = -1; i <= 1; i++) {
@@ -392,13 +399,31 @@ export const PuddleShader = {
           // Tight: a couple of rings at the crest and nothing behind them. A
           // wide wake here is what turned a scatter of drop strikes into one
           // continuously churning surface.
-          float wave = sin((d - radius) * 44.0)
-            * exp(-abs(d - radius) * 16.0)
+          // Shallower and finer, which is what a puddle's rings actually are.
+          //
+          // These were 44 rad/m with a 16/m envelope, and that is a ring
+          // system for water with depth under it: a long wavelength, a tall
+          // crest, and a swing of the reflection big enough to read as a wave
+          // rather than as a ripple. A rain puddle is a centimetre or two deep.
+          // Its rings are correspondingly short — capillary rather than gravity
+          // waves — and they are *low*: a drop's energy spreads through a ring
+          // that grows, so what stands on a puddle is a fine, tight, shallow
+          // thing you read by the light on it, not by how far it moves the sky.
+          //
+          // Twice the spatial frequency, twice the envelope decay (so the crest
+          // is a band half as wide), and the amplitude down with them below.
+          float wave = sin((d - radius) * 88.0)
+            * exp(-abs(d - radius) * 34.0)
             * exp(-age * 1.5);
           sum += wave;
         }
       }
-      return sum * 0.55 * uRain;
+      // 0.22 rather than 0.55. The displacement a rain ring is allowed is a
+      // statement about the depth of the water it is standing in, and this is a
+      // puddle. What it loses in swing it gets back as light — the crest term
+      // and the glint both read the *slope*, and halving the wavelength while
+      // taking the height down by 60% leaves the slope where it was.
+      return sum * 0.22 * uRain;
     }
 
     /** The wind chop: three crossing trains, none of them commensurate, so the
@@ -415,9 +440,44 @@ export const PuddleShader = {
      * fifty metres a chopped surface is a sheen, not a texture.
      */
     float chop(vec2 g, float t, float fine) {
-      float h = sin(g.y * 12.0 + g.x * 3.0 + t * 1.5) * 0.30;
-      h += sin(g.y * 23.0 - g.x * 9.0 - t * 2.2) * 0.18 * fine;
-      h += sin(g.x * 37.0 + g.y * 7.0 + t * 3.3) * 0.10 * fine * fine;
+      // Every train runs across the view, and the reason is the vertical
+      // striping this pool has had in it all along.
+      //
+      // These were g.x * 3, g.x * 9 and g.x * 37 — the last one x-dominant
+      // outright. In the plane those are three ordinary wave trains crossing at
+      // three angles. On screen they are not, because of what x *is* here:
+      // ground() reads x as (uv.x − 0.5) · aspect · z, so a ground-space
+      // x-frequency is a screen-space frequency multiplied by the distance, and
+      // its crests run *away* from the viewer. Perspective compresses this
+      // picture vertically and only vertically, so a crest lying along the line
+      // of sight is the one feature that never gets finer with distance: it
+      // stays a bar of the same width from the far lip to the viewer's feet.
+      // The differencing that produces the slope then reads that bar column by
+      // column, the displacement holds nearly constant down each one, and the
+      // pool fills with full-height vertical stripes with hard edges. Isolated
+      // by rendering with and without this function, the whole striping is in
+      // the difference.
+      //
+      // Wind waves have their crests across the wind, and the wind here crosses
+      // the scene rather than running down it. So the x terms come down to a
+      // token — enough that the crests are not dead straight and the three
+      // trains still disagree, not enough for any of them to draw a line
+      // pointing at the vanishing point. What is left is what a puddle in a
+      // breeze looks like: fine bands running across the water, crowding
+      // together toward the far lip because that is what distance does to them.
+      // The amplitudes come down with the turn, and that is arithmetic rather
+      // than taste. Slope, not height, is what the displacement and both light
+      // terms read, and the y direction is the steep one here: ground() has
+      // z ∝ 1/(vanishing − v), so d g.y / d uv.y goes as z² while d g.x / d uv.x
+      // only goes as z. Moving a train's energy from x into y therefore
+      // multiplies the slope it contributes by the distance, and leaving the
+      // heights where they were put the whole far half of the pool into hard
+      // banding — the same fault as before with the stripes lying the other
+      // way. These are the heights that land the surface back on the slope it
+      // was fitted at.
+      float h = sin(g.y * 12.0 + g.x * 0.8 + t * 1.5) * 0.17;
+      h += sin(g.y * 23.0 - g.x * 1.6 - t * 2.2) * 0.09 * fine;
+      h += sin(g.y * 31.0 + g.x * 2.4 + t * 3.3) * 0.05 * fine * fine;
       return h;
     }
 
@@ -645,7 +705,24 @@ export const PuddleShader = {
       // varnish over the whole surface. The hash rides the ground plane, so the
       // grain gets finer with distance like everything else here.
       float grain = 0.55 + 0.45 * hash21(floor(g * 26.0) + floor(t * 9.0) * 0.017);
-      float glint = spec * grain * fine * (0.35 + 1.65 * uWeave);
+      // The wind's own patches of light.
+      //
+      // Still water does not glitter, which is right, and a puddle with a
+      // breath of wind on it is not still — it catches the sun in *patches*
+      // that travel, because a gust is a region of roughened surface crossing
+      // the pool rather than a uniform increase in slope everywhere. The glint
+      // above cannot produce that on its own: it reads the surface pointwise,
+      // so at WATER = 0.11 the chop tilts the water by a fraction of a degree
+      // and every point of it is equally dull.
+      //
+      // Two slow crossing trains, well below the chop's own frequencies, used
+      // as a *gain* on the light rather than as height — nothing here displaces
+      // the reflection, so the cloud in the water stays as readable as it was
+      // and only the sparkle breathes over it. It rides the same ground plane,
+      // so a patch shortens toward the far lip like everything else.
+      float gust = 0.5 + 0.5 * sin(g.y * 1.9 - t * 0.55 + sin(g.x * 1.3 + t * 0.31) * 1.7);
+      float breeze = 1.0 + 1.5 * uWind * gust * gust;
+      float glint = spec * grain * fine * breeze * (0.35 + 1.65 * uWeave);
       // And the surface's own energy: a footfall's crest and a rain-struck
       // patch both carry more slope than flat water, so the light gathers where
       // something is happening to the water. 光を編む.
@@ -669,6 +746,14 @@ export const PuddleShader = {
       // slope-magnitude highlight, tinted by the horizon rather than by the
       // sun, so it appears on every crest and not only on the ones that happen
       // to be aimed at the light.
+      // The window this opens in is set by the *shallowest* ring that still has
+      // to be seen, and that is now the rain's — the rings above lost 60% of
+      // their height when they became puddle rings rather than lake rings
+      // (rainRings). A threshold fitted to the old amplitude would have taken
+      // them off the water altogether, which is the failure the shallowing was
+      // careful to avoid: the height came down and the wavelength came down
+      // with it precisely so the *slope* would survive, and this is the term
+      // that reads it. So the window moves down to meet it.
       float steep = smoothstep(1.10, 4.20, length(slope) * fine);
       vec3 horizonLight = intoWater(texture2D(tDiffuse, vec2(skyUv.x, uSkyV.x)).rgb, 0.0);
 
@@ -690,7 +775,27 @@ export const PuddleShader = {
       // Weighted by the interior rather than the key, because a specular
       // highlight is a property of the water's surface and does not care what
       // that surface happens to be reflecting.
-      colour = mix(colour, horizonLight, steep * 0.16 * (0.4 + 0.6 * uWeave) * interior);
+      //
+      // 0.28 rather than 0.16, and the raise is the answer to two separate
+      // complaints that turn out to be one term.
+      //
+      // A pressed ring was reading as a displacement and almost nothing else,
+      // which over the reference's deep navy — most of the water — is very
+      // little. The crest is what a ring looks like: a band of tilted water
+      // reflecting a brighter patch nearer the horizon, and it is the reason a
+      // real ring is visible on dark water at all. It was set low enough to be
+      // a hint.
+      //
+      // And it is the *only* thing in this pass that puts a surface over the
+      // girl. She is painted, not keyed, so the reflection under her is the
+      // photograph; the displacement she is allowed is a fifth of a shin's
+      // width by necessity (uPhotoWarp), which means a ripple crossing her can
+      // never be seen by moving her. It can be seen by *lighting* her — a crest
+      // passing over a reflection lies in front of it and throws the horizon
+      // back whatever is underneath, which is why the water in front of a
+      // reflected figure flashes and the figure does not tear. Weighted by the
+      // interior rather than the key for exactly that reason.
+      colour = mix(colour, horizonLight, steep * 0.28 * (0.4 + 0.6 * uWeave) * interior);
 
       // The umbrella's own sheen.
       //
