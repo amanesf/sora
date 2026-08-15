@@ -230,7 +230,7 @@ async function main() {
     }
     // Feathered, so the lift arrives without an edge.
     const field = boxBlur(chosen, 4);
-    console.log(`character      ${px} px lifted`);
+    console.log(`character      ${px} px graded`);
     return field;
   }
 
@@ -251,8 +251,49 @@ async function main() {
    * from the front. In linear light, so it is an exposure on her rather than a
    * contrast curve, which is what keeps her own modelling intact while it
    * moves.
+   *
+   * The exposure was right and it was not enough, and the measurement says
+   * exactly why. Over her pixels, before and after:
+   *
+   *                 5th / median / 95th        chroma
+   *   photograph      31 /  68 / 110  (79)      0.284
+   *   lifted          42 /  93 / 151  (109)     0.284
+   *   the cloud       64 /  91 / 205  (141)     0.385
+   *
+   * A gain moves a subject; it cannot make one. It carried her median to 93,
+   * which is the cloud's own median — so she now sits at the brightness of the
+   * brightest thing in the frame while spanning three quarters of its range and
+   * none of its colour. That is the description of a grey card. The skirt is
+   * the tell: navy serge at 68 became grey at 93, because there was nothing in
+   * a gain to keep its shadow dark while its lit edge rose.
+   *
+   * So the same three things a colourist would reach for, in the order they are
+   * always reached for, and all in linear light:
    */
   const CHARACTER_LIFT = 2.05;
+  /**
+   * Contrast, about her own middle rather than the frame's. Pivoting on mid
+   * grey would simply be a second exposure on her, since all of her is below
+   * it; pivoting on her median darkens the serge and the hair and opens the
+   * blouse and the rim on her legs, which is what "she is flat" actually means.
+   */
+  const CHARACTER_CONTRAST = 1.35;
+  /**
+   * Chroma about luma, so it moves colour without moving the brightness the
+   * two constants above just settled. She is not a grey subject — the serge is
+   * blue, the ribbon is blue, the skin is warm — and the gain preserved the
+   * *ratios* between her channels, which is precisely why it could not restore
+   * what a dark subject loses: chroma read at a distance is a distance, and
+   * hers was small because she was dark.
+   */
+  const CHARACTER_CHROMA = 1.35;
+  /**
+   * Where the contrast pivots: her median in the photograph, 68 of 255,
+   * measured over the same weighted pixels the grade is applied to and carried
+   * through the exposure with it. Written as a constant like every other number
+   * here that is a property of this frame rather than a choice.
+   */
+  const CHARACTER_PIVOT = Math.pow(68 / 255, 2.2);
 
   // The key first: the interior and the character both come out of it, and the
   // photograph's lift depends on the second.
@@ -278,17 +319,34 @@ async function main() {
         raw: { width: FRAME_WIDTH, height: FRAME_HEIGHT, channels: 1 },
       });
     } else {
-      // The character's lift, in linear light so it is an exposure on her
-      // rather than a curve.
+      // The character's grade: exposure, contrast, chroma, in linear light.
+      //
+      // The mask used to be folded into the exposure itself (a gain of
+      // `1 + (LIFT - 1) * w`), which was exact for one operation and does not
+      // generalise — a weighted contrast is not a contrast at a weighted
+      // exponent. So she is graded in full and then mixed back by the mask,
+      // which is the same thing at w = 1 and w = 0 and the honest thing
+      // between: at the feathered rim she is a blend of graded and un-graded
+      // rather than the result of a weaker curve.
       const rgb = await resized.removeAlpha().raw().toBuffer();
+      const pivot = CHARACTER_PIVOT * CHARACTER_LIFT;
       for (let i = 0; i < FRAME_WIDTH * FRAME_HEIGHT; i++) {
         const w = character[i] / 255;
         if (w < 0.004) continue;
-        const gain = 1 + (CHARACTER_LIFT - 1) * w;
+        const lit = [0, 1, 2].map(
+          (c) => Math.pow(rgb[i * 3 + c] / 255, 2.2) * CHARACTER_LIFT,
+        );
+        const shaped = lit.map(
+          (v) => pivot * Math.pow(Math.max(v, 1e-6) / pivot, CHARACTER_CONTRAST),
+        );
+        const luma = 0.2126 * shaped[0] + 0.7152 * shaped[1] + 0.0722 * shaped[2];
         for (let c = 0; c < 3; c++) {
+          // Clamped before the encode, not after: a negative channel is what a
+          // chroma gain produces at the gamut's edge and it is not a colour.
+          const saturated = Math.min(1, Math.max(0, luma + (shaped[c] - luma) * CHARACTER_CHROMA));
+          const graded = Math.pow(saturated, 1 / 2.2);
           const v = rgb[i * 3 + c] / 255;
-          const lit = Math.pow(Math.pow(v, 2.2) * gain, 1 / 2.2);
-          rgb[i * 3 + c] = Math.max(0, Math.min(255, Math.round(lit * 255)));
+          rgb[i * 3 + c] = Math.max(0, Math.min(255, Math.round(255 * (v + (graded - v) * w))));
         }
       }
       resized = sharp(rgb, {
@@ -304,6 +362,51 @@ async function main() {
       .toFile(path.join(outDir, name));
     const bytes = fs.statSync(path.join(outDir, name)).size;
     console.log(`app/public/${name}  ${(bytes / 1024).toFixed(1)} KB`);
+  }
+
+  /**
+   * Measure her, in the file that shipped.
+   *
+   * The three constants above are answers to a comparison — her tonal range and
+   * her chroma against the cloud she is standing next to — and a comparison
+   * that is only made once is a comparison nobody can check. Printed here, in
+   * the same units the constants were fitted in, so the next change to any of
+   * them starts from the frame's own numbers rather than from this paragraph.
+   *
+   * The cloud in the photograph, not the rendered one, deliberately: the live
+   * sky moves and the light on it is chosen per visit, so the only stable thing
+   * to hold her against is the painting the illustrator balanced her against.
+   */
+  {
+    const ref = await sharp(path.join(outDir, 'ref.webp')).removeAlpha().raw().toBuffer();
+    /** A patch of the reflected cumulus, clear of the girl and the wires. */
+    const CLOUD = { x0: 430, x1: 700, y0: 330, y1: 560 };
+    const region = (pick) => {
+      const luma = [];
+      const chroma = [];
+      for (let y = 0; y < FRAME_HEIGHT; y++) {
+        for (let x = 0; x < FRAME_WIDTH; x++) {
+          if (!pick(x, y)) continue;
+          const i = (y * FRAME_WIDTH + x) * 3;
+          const r = ref[i] / 255;
+          const g = ref[i + 1] / 255;
+          const b = ref[i + 2] / 255;
+          luma.push(0.2126 * r + 0.7152 * g + 0.0722 * b);
+          const max = Math.max(r, g, b);
+          chroma.push(max <= 0 ? 0 : (max - Math.min(r, g, b)) / max);
+        }
+      }
+      luma.sort((a, b) => a - b);
+      const at = (p) => Math.round(255 * luma[Math.floor(p * (luma.length - 1))]);
+      const mean = chroma.reduce((s, v) => s + v, 0) / chroma.length;
+      const [lo, mid, hi] = [at(0.05), at(0.5), at(0.95)];
+      return `${String(lo).padStart(3)} /${String(mid).padStart(4)} /${String(hi).padStart(4)}`
+        + `  (${String(hi - lo).padStart(3)})   ${mean.toFixed(3)}`;
+    };
+    console.log('');
+    console.log('                5th / median / 95th  (range)  chroma');
+    console.log(`  girl        ${region((x, y) => character[y * FRAME_WIDTH + x] / 255 > 0.6)}`);
+    console.log(`  cloud       ${region((x, y) => x > CLOUD.x0 && x < CLOUD.x1 && y > CLOUD.y0 && y < CLOUD.y1)}`);
   }
 
   // Measure the key.
