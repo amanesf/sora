@@ -838,7 +838,31 @@ export const PuddleShader = {
       // with it precisely so the *slope* would survive, and this is the term
       // that reads it. So the window moves down to meet it.
       float steep = smoothstep(1.10, 4.20, length(slope) * fine);
-      vec3 horizonLight = intoWater(texture2D(tDiffuse, vec2(skyUv.x, uSkyV.x)).rgb, 0.0);
+      //
+      // Averaged across the sky rather than read column by column, and that is
+      // the vertical striping on the umbrella.
+      //
+      // This was one tap: texture2D(tDiffuse, vec2(skyUv.x, uSkyV.x)) — a
+      // single *row* of the sky, at the horizon, sampled at this pixel's own x.
+      // Every crest in the pool and every square millimetre of the canopy's
+      // sheen was then tinted by whatever that one row happens to hold directly
+      // above it, and that row is the busiest in the frame: cloud, gap, cloud,
+      // gap. Painting a horizontal profile over a tall area is the definition
+      // of a vertical stripe, and the canopy — which takes this over a wide,
+      // otherwise featureless sheet — showed it most.
+      //
+      // Five taps spread across a fifth of the frame. What a tilted facet
+      // actually reflects is not the sky directly above it: it is a patch near
+      // the horizon whose position depends on which way the facet happens to be
+      // tilted, and the facets point everywhere. The honest quantity is
+      // therefore the horizon's *average* brightness over a broad span, which
+      // is what this is, and it has no column structure left to print.
+      vec3 horizonLight = vec3(0.0);
+      for (int i = -2; i <= 2; i++) {
+        float u = clamp(skyUv.x + float(i) * 0.05, 0.001, 0.999);
+        horizonLight += texture2D(tDiffuse, vec2(u, uSkyV.x)).rgb;
+      }
+      horizonLight = intoWater(horizonLight * 0.2, 0.0);
 
       // The reflected content: sky where the water is keyed, photograph where
       // something is painted on it.

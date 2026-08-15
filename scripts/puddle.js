@@ -276,53 +276,102 @@ async function main() {
    * Carried in the key image's alpha, so it costs no extra request and cannot
    * be separated from the key it belongs to.
    */
-  function puddleInterior(data) {
+  function puddleInterior(data, body) {
     const n = FRAME_WIDTH * FRAME_HEIGHT;
     const water = new Float32Array(n);
     for (let i = 0; i < n; i++) {
       water[i] = keyness(data[i * 3], data[i * 3 + 1], data[i * 3 + 2]) > 0.35 * 255 ? 255 : 0;
     }
     const near = boxBlur(water, 26);
-    const alpha = Buffer.alloc(n);
-    let inside = 0;
+    const soft = new Float32Array(n);
     for (let i = 0; i < n; i++) {
       // 0 where less than a third of the neighbourhood is water, 1 by two
       // thirds. Wide, because it is doing the feathering as well.
       const t = Math.max(0, Math.min(1, (near[i] / 255 - 0.34) / 0.30));
-      const v = Math.round(255 * t * t * (3 - 2 * t));
-      // Floored at 1, never 0, and this one byte is the difference between the
-      // key surviving the encode and being thrown away.
-      //
-      // WebP does not store the colour of a fully transparent pixel. Every
-      // encoder in libwebp runs a "cleanup transparent area" pass first, which
-      // rewrites the RGB under alpha 0 to whatever compresses best, and there
-      // is no way through sharp to ask for `-exact`. For an ordinary image that
-      // is free — nobody can see the colour of a transparent pixel. This image
-      // is not ordinary: its RGB is the *key* and its alpha is the *interior*,
-      // two independent fields (see the header), and they disagree in exactly
-      // one place — a strip of open water too narrow for the interior's 26px
-      // blur to call it interior at all.
-      //
-      // The gap between the girl's legs is that strip, and it is why her knees
-      // kept being cut. The painted key is magenta all the way down it; the
-      // shipped key went (203,22,241) at row 228 and (214,15,0) at row 230,
-      // because that is where the interior alpha reached 0 and the encoder took
-      // the blue channel away. The shader's key reads the *blue-minus-green*
-      // distance, so it fell from 1.0 to 0.0 across one row, along a straight
-      // horizontal line, right at her knee: live sky above it, flat photograph
-      // below. No constant in the shader could have fixed that, because the
-      // fault was not in the picture, it was in the file.
-      //
-      // Alpha 1 is not transparent, so the cleanup leaves the pixel alone, and
-      // effects/puddleShader.ts subtracts the floor back off before use.
+      soft[i] = t * t * (3 - 2 * t);
+    }
+
+    /**
+     * ...and then the girl is added, which is the half of this that was missing
+     * and the reason the water never got onto her.
+     *
+     * The neighbourhood test above is honest about what it can do, and the
+     * CHARACTER note below already says where it fails: a 53px window placed
+     * inside a 120px-wide figure sees no water at all, so it finds her outline
+     * and loses her middle. Measured on the shipped asset, the interior read
+     * 247 on her arm and 255 through the umbrella — both narrow — and **0** on
+     * her blouse, her skirt and her head. Every surface term in
+     * effects/puddleShader.ts is weighted by this field, so the crest lines,
+     * the glitter and the sheen were switched off over exactly the parts of her
+     * broad enough to see them on. The water ran over her wrists and stopped at
+     * her sleeves.
+     *
+     * A wider blur cannot fix it: a window big enough to see past her shoulders
+     * is big enough to call the road water. Filling enclosed holes cannot
+     * either, and it is worth recording why, because it is the obvious answer
+     * and it was tried here. "Inside the pool" is topological — a hole is
+     * somewhere you cannot reach from outside the frame without crossing water
+     * — but her legs run off the top of the frame and they are *narrow*, so the
+     * softened interior does not close them; the flood walks in along her shins
+     * and calls her torso background. Measured, that recovered 1133 px of the
+     * ~30,000 she is.
+     *
+     * So she is handed in. The ellipses that CHARACTER measures for the grade
+     * are already exactly this — her reflection and her legs in the water, cut
+     * by the key so that the water inside them is left alone — and the same
+     * argument that justifies them there justifies them here: a region test
+     * cannot find a large object *by* its surroundings, so this frame's one
+     * large object is measured instead. It costs nothing extra; it is the field
+     * the grade is built from, returned rather than recomputed.
+     *
+     * Union, never subtraction: this may only add interior, so nothing the
+     * neighbourhood test already gets right can be taken away by it. And it is
+     * deliberately the key-cut ellipses only, not the warm one — that third
+     * ellipse is her legs and shoes on the *road* above the far lip, where
+     * there is no water and a surface has no business being drawn.
+     */
+    // Where the water starts, column by column — the far lip, as the key
+    // actually draws it rather than as one horizontal row.
+    //
+    // The handed-in body is a pair of ellipses, and an ellipse does not know
+    // where the waterline is. The lower one reaches up past the lip on her
+    // side of the frame, so without this it grants interior to a band of *road*
+    // beside her shins, and the shader would then draw crest light and glitter
+    // on dry asphalt — which is the same "bright oval of road around her feet"
+    // the warm ellipse's note describes, arriving by a different route. Her
+    // reflection is below the lip by definition, so clipping there costs
+    // nothing that belongs to her and removes everything that does not.
+    const lip = new Int32Array(FRAME_WIDTH).fill(FRAME_HEIGHT);
+    for (let x = 0; x < FRAME_WIDTH; x++) {
+      for (let y = 0; y < FRAME_HEIGHT; y++) {
+        if (water[y * FRAME_WIDTH + x] > 0) { lip[x] = y; break; }
+      }
+    }
+
+    const filled = new Float32Array(n);
+    let bodyPx = 0;
+    for (let i = 0; i < n; i++) {
+      const x = i % FRAME_WIDTH;
+      const y = (i - x) / FRAME_WIDTH;
+      const b = (body && y >= lip[x]) ? Math.max(0, Math.min(1, body[i])) : 0;
+      filled[i] = Math.max(soft[i], b) * 255;
+      if (b > 0.5 && soft[i] <= 0.5) bodyPx++;
+    }
+    const feathered = boxBlur(filled, 6);
+    const alpha = Buffer.alloc(n);
+    let inside = 0;
+    for (let i = 0; i < n; i++) {
+      const v = Math.round(255 * Math.max(soft[i], feathered[i] / 255));
       // Only where there is a key to protect. Flooring the whole frame works
       // too and costs 300KB: it hands the encoder a million pixels of road
       // whose colour it now has to store, when the road's key is zero and
-      // nobody will ever read it.
+      // nobody will ever read it. See effects/puddleShader.ts, which subtracts
+      // the floor back off.
       alpha[i] = v > 0 || water[i] > 0 ? Math.max(v, 1) : 0;
       if (v > 128) inside++;
     }
-    console.log(`interior       ${(100 * inside / n).toFixed(1)}% of the frame carries displacement`);
+    console.log(`interior       ${(100 * inside / n).toFixed(1)}% of the frame carries displacement`
+      + `, ${Math.round(bodyPx)} px of it the girl the region test could not see`);
     return alpha;
   }
 
@@ -513,7 +562,11 @@ async function main() {
     // Feathered, so the lift arrives without an edge.
     const field = boxBlur(chosen, 4);
     console.log(`character      ${px} px graded`);
-    return field;
+    // `keyed` comes back too: it is the union of the ellipses that are cut by
+    // the key rather than by warmth — that is, her reflection and her legs
+    // *in the water*, and nothing above the far lip. puddleInterior needs
+    // exactly that and cannot derive it (see the note there).
+    return { field, body: keyed };
   }
 
   /**
@@ -632,8 +685,11 @@ async function main() {
     .raw()
     .toBuffer();
   const refRaw = await sharp(refPath).resize(fit).removeAlpha().raw().toBuffer();
-  const interiorAlpha = puddleInterior(maskRaw);
-  const character = characterMask(maskRaw, refRaw);
+  // Her before the pool, because the pool's interior needs her: a region test
+  // finds an outline and loses a middle, so the one large object in the water
+  // has to be handed in rather than discovered. See puddleInterior.
+  const { field: character, body: characterBody } = characterMask(maskRaw, refRaw);
+  const interiorAlpha = puddleInterior(maskRaw, characterBody);
   // After both, deliberately. The interior is the puddle's outline and the
   // character is her grade, and neither has an opinion about how transparent
   // the umbrella is: the canopy is inside the pool and drawn over by her
