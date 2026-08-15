@@ -36,14 +36,22 @@ export const GoldenLightShader = {
     /** The sun's colour at this hour, luminance-normalised (core/daylight.ts). */
     uSunTint: { value: new THREE.Vector3(1, 1, 1) },
     /**
-     * 0 in full day, 1 with the sun on the horizon.
+     * The sun's elevation in degrees (core/daylight.ts), and what decides how
+     * much of this pass there is at all.
      *
-     * Drives how much of this there is at all, not what colour it is. A beam
-     * only rakes when the sun is low: at noon it comes down the vertical and
-     * there is no long slanted throw across the ground to see, so the whole
-     * pass fades out toward midday rather than pasting an evening over it.
+     * It was core/daylight.ts's `dusk` — 0 in full day, 1 with the sun on the
+     * horizon — and that quietly switched the whole pass off. `dusk` is
+     * `1 − smoothstep(elevation, 2°, 30°)`, so it is a measure of *sunset*, and
+     * at this app's 16:48 the sun stands at about 28°: dusk 0.015. The shafts
+     * were being drawn at a fiftieth of their strength and not one spark was
+     * ever produced — every ray visible in the frame was painted into the
+     * photograph.
+     *
+     * The physical claim was always about elevation and never about sunset: a
+     * beam rakes when the sun is *low*, which starts happening long before it
+     * sets. So the gate now reads the angle it was always about.
      */
-    uDusk: { value: 0 },
+    uElevationDeg: { value: 90 },
     uAspect: { value: 1376 / 768 },
   },
   vertexShader: /* glsl */ `
@@ -59,7 +67,7 @@ export const GoldenLightShader = {
     uniform float uAmount;
     uniform float uRain;
     uniform vec3 uSunTint;
-    uniform float uDusk;
+    uniform float uElevationDeg;
     uniform float uAspect;
     varying vec2 vUv;
 
@@ -177,7 +185,10 @@ export const GoldenLightShader = {
       vec3 colour = texture2D(tDiffuse, vUv).rgb;
       // A low sun is the whole premise: at midday there is no rake and this
       // pass has nothing to say.
-      float low = smoothstep(0.15, 0.75, uDusk);
+      // Full strength by 25° and gone by 55°: a late afternoon rakes, a midday
+      // does not. See uElevationDeg for what this used to read, and why that
+      // was a fiftieth of a pass.
+      float low = 1.0 - smoothstep(25.0, 55.0, uElevationDeg);
       float amount = uAmount * low;
       if (amount < 0.004) {
         gl_FragColor = vec4(colour, 1.0);
@@ -208,12 +219,12 @@ export const GoldenLightShader = {
         float near = sparks(vUv, 9.0, 0.11, 0.26, 0.0);
         float mid = sparks(vUv, 26.0, 0.24, 0.15, 31.7);
         float dust = sparks(vUv, 48.0, 0.40, 0.10, 77.1);
-        float drops = near * 0.13 + mid * 0.22 + dust * 0.15;
+        float drops = near * 0.42 + mid * 0.66 + dust * 0.46;
 
         // Where the beam is, mostly. Not exclusively: some light is scattered
         // everywhere and the floor keeps a scatter of sparks across the whole
         // frame, rather than a hard edge where the shafts stop.
-        float inBeam = 0.28 + 1.5 * beam;
+        float inBeam = 0.42 + 1.5 * beam;
         lit += gold * drops * inBeam * amount * (0.35 + 0.65 * uRain);
       }
 

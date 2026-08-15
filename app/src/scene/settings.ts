@@ -23,6 +23,12 @@
  * between them (scene/cloudField.ts's coverage curves). It is what the
  * reference's water holds — one big cumulus over deep blue.
  *
+ * 0.56 rather than exactly 0.62 is the one small concession: the water images a
+ * magnified band of sky, so a cloud that breaks a window's view in two closes a
+ * puddle's completely, and the reference has open blue around its tower on
+ * every side. It stays well above the tier's tower threshold, which is the
+ * property that matters here.
+ *
  * It was taken down to 0.42 and then 0.35 to fix a measured excess of white in
  * the water (94,103 white pixels against the reference's 25,125), and that was
  * the wrong lever pulled for a real reading. Coverage is what decides whether
@@ -37,7 +43,7 @@
  * in the mapping (scene/puddle.ts's WATER_SKY_V0/V1), and this goes back to the
  * value the parent project fitted everything at.
  */
-export const CLOUD = 0.62;
+export const CLOUD = 0.56;
 
 /**
  * 0.06 — very nearly sakura's dry default, and for a measured reason.
@@ -76,8 +82,14 @@ export const RAIN = 0.06;
  *
  * Keeping them separate is what lets the picture have the reference's rings and
  * the reference's gold without the reference's sky having to close.
+ *
+ * 0.62 rather than the 0.45 it started at: at 0.45 the rings were there in
+ * motion and invisible in a still frame, which for a picture whose whole
+ * subject is a surface being disturbed is the wrong side of the line to be on.
+ * The reference holds about six ring systems wide enough to count the rings in,
+ * and this is where a still frame holds about that many.
  */
-export const DRIZZLE = 0.45;
+export const DRIZZLE = 0.62;
 
 /**
  * 16.8 — late afternoon, sun low and to the side.
@@ -97,19 +109,41 @@ export const HOUR = 16.8;
 export const SPEED = 10;
 
 /**
- * 0.38 — enough chop that the water is water.
+ * 0.11 — barely any, which is what a puddle actually has.
  *
  * A dead-flat puddle is a mirror, and a mirror is a picture of the sky with
- * none of the water in it. The reference's own surface carries a visible
- * texture between its rings; this is that texture, and it is low enough that
- * the reflected cloud stays legible as cloud.
+ * none of the water in it, so this is not zero. But it was 0.38, and combined
+ * with wind trains an order of magnitude too long (effects/puddleShader.ts's
+ * chop) it put a slow meandering distortion across the whole pool — the
+ * reflection swimming about in snaking bands. The reference's water is very
+ * nearly glass: what disturbs it is drops landing on it, one ring at a time,
+ * and between the rings you can read the cloud's outline as clearly as if it
+ * were the sky itself.
  */
-export const WATER = 0.38;
+export const WATER = 0.11;
 
 /** 0.62 — how much light the surface's slopes throw back. The reference is
  * lit hard from a low sun and its water glitters accordingly, so this sits
  * above the middle of its axis. */
 export const WEAVE = 0.62;
+
+/**
+ * The finishing grade, over the whole frame including the photograph
+ * (effects/finalGrade.ts).
+ *
+ * Every other number in this file describes the scene. These two describe the
+ * *print*, and they are the only place in the app where something is set
+ * because of how it looks rather than because of what it measures — which is
+ * what a grade is, and why it is one pass with two knobs at the very end
+ * instead of a thumb on the scale of six fitted constants upstream.
+ *
+ * Modest on purpose. 1.16 and 1.10 are about a third of a stop of contrast and
+ * a nudge of colour: enough that the blue in the water reads as blue and the
+ * road keeps its warmth apart from it, and not so much that the illustration
+ * stops looking like the illustration it is.
+ */
+export const FINAL_SATURATION = 1.16;
+export const FINAL_CONTRAST = 1.10;
 
 /** 60. Nobody is being asked to choose, so the app draws at the rate it was
  * built for and the capture harness can still say `?fps=30`. */

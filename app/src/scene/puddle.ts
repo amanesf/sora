@@ -148,5 +148,5 @@ export const GROUND_SCALE = 1.0;
  * horizontal read to match it, so magnifying stays magnifying and does not
  * become stretching.
  */
-export const WATER_SKY_V0 = 0.22;
-export const WATER_SKY_V1 = 0.72;
+export const WATER_SKY_V0 = 0.30;
+export const WATER_SKY_V1 = 0.74;

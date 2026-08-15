@@ -250,15 +250,20 @@ export const PuddleShader = {
     varying vec2 vUv;
 
     const float RING_LIFE = ${RING_LIFE.toFixed(1)};
-    /** Metres per second a ring travels outward. Real capillary-gravity rings
-     * on a shallow puddle run about this; it is also, conveniently, slow enough
-     * to watch and fast enough to have left by the time you press again. */
-    const float RING_SPEED = 0.62;
-    /** Rings per metre in the wake, and how fast the wake dies behind the
-     * crest. Together these are what makes a footfall read as three or four
-     * rings rather than as one expanding line. */
-    const float RING_FREQ = 34.0;
-    const float RING_TAIL = 7.0;
+    /** Metres per second a ring travels outward. Real capillary-gravity rings on
+     * a shallow puddle run about this. */
+    const float RING_SPEED = 0.42;
+    /**
+     * Rings per metre in the wake, and how fast the wake dies behind the crest.
+     *
+     * 52 per metre is a ring every 2cm, which is what a drop actually makes.
+     * These were 34 and 7 — a ring every 3cm with a wake half a metre long —
+     * and at that scale the water stopped reading as a puddle: the rings were
+     * as wide as the pool and swung the reflection around in great slow curves
+     * rather than putting small ripples on it.
+     */
+    const float RING_FREQ = 52.0;
+    const float RING_TAIL = 12.0;
 
     /**
      * Screen point -> the ground plane the water lies in.
@@ -311,9 +316,9 @@ export const PuddleShader = {
       // separate ring systems wide enough to count the rings in. What makes
       // that picture is not how much rain there is, it is that each strike is
       // *resolvable*: far apart, and still ringing seconds later.
-      float cells = 0.95;
+      float cells = 1.25;
       vec2 c0 = floor(g * cells);
-      float period = mix(4.2, 1.1, uRain);
+      float period = mix(4.2, 1.4, uRain);
       float sum = 0.0;
       for (int j = -1; j <= 1; j++) {
         for (int i = -1; i <= 1; i++) {
@@ -322,14 +327,17 @@ export const PuddleShader = {
           vec2 centre = (c + 0.25 + r * 0.5) / cells;
           float age = mod(t + r.x * period * 6.0, period);
           float d = length(g - centre);
-          float radius = age * RING_SPEED * 0.8;
-          float wave = sin((d - radius) * 17.0)
-            * exp(-abs(d - radius) * 5.5)
-            * exp(-age * 1.4);
+          float radius = age * RING_SPEED * 0.55;
+          // Tight: a couple of rings at the crest and nothing behind them. A
+          // wide wake here is what turned a scatter of drop strikes into one
+          // continuously churning surface.
+          float wave = sin((d - radius) * 44.0)
+            * exp(-abs(d - radius) * 16.0)
+            * exp(-age * 1.5);
           sum += wave;
         }
       }
-      return sum * 0.62 * uRain;
+      return sum * 0.55 * uRain;
     }
 
     /** The wind chop: three crossing trains, none of them commensurate, so the
@@ -346,9 +354,9 @@ export const PuddleShader = {
      * fifty metres a chopped surface is a sheen, not a texture.
      */
     float chop(vec2 g, float t, float fine) {
-      float h = sin(g.y * 2.9 + g.x * 0.7 + t * 1.5) * 0.55;
-      h += sin(g.y * 5.3 - g.x * 2.1 - t * 2.2) * 0.30 * fine;
-      h += sin(g.x * 8.7 + g.y * 1.7 + t * 3.3) * 0.15 * fine * fine;
+      float h = sin(g.y * 12.0 + g.x * 3.0 + t * 1.5) * 0.30;
+      h += sin(g.y * 23.0 - g.x * 9.0 - t * 2.2) * 0.18 * fine;
+      h += sin(g.x * 37.0 + g.y * 7.0 + t * 3.3) * 0.10 * fine * fine;
       return h;
     }
 
@@ -380,11 +388,15 @@ export const PuddleShader = {
     vec3 intoWater(vec3 rendered, float depth) {
       if (uPalette < 0.5) return rendered;
       vec3 wet = clamp(uWaterGain * pow(max(rendered, 0.0), uWaterGamma), 0.0, 1.4);
-      // And a little further down toward the near lip, where the view is
-      // steepest and the least is reflected. Small, and linear in depth rather
-      // than another curve: the response above is what the water does to a
-      // colour, this is only how much of it comes back.
-      return wet * (1.0 - 0.16 * depth);
+      // And further down toward the near lip, where the view is steepest and
+      // the least is reflected. Linear in depth rather than another curve: the
+      // response above is what the water does to a colour, this is only how
+      // much of it comes back. It carries most of the picture's vertical
+      // gradient — the reference's water has a median luminance of 77 against
+      // the render's 104 before this reached 0.30 — and it is the honest place
+      // for that gradient to live, because Fresnel really does fall away as the
+      // view steepens.
+      return wet * (1.0 - 0.30 * depth);
     }
 
     void main() {
@@ -472,8 +484,8 @@ export const PuddleShader = {
       //
       // Clamped as well, because the far lip's ground coordinates run to
       // infinity and an unclamped slope there samples the whole sky at once.
-      vec2 push = slope * 0.0013 * fine * (0.45 + 0.55 * (1.0 - depth));
-      push = clamp(push, vec2(-0.035), vec2(0.035));
+      vec2 push = slope * 0.00075 * fine * (0.45 + 0.55 * (1.0 - depth));
+      push = clamp(push, vec2(-0.018), vec2(0.018));
 
       // The mirror. The rendered frame is the reflected hemisphere already
       // (scene/puddle.ts aims the camera up), so this is a remap of the water's
@@ -527,12 +539,12 @@ export const PuddleShader = {
       // slope-magnitude highlight, tinted by the horizon rather than by the
       // sun, so it appears on every crest and not only on the ones that happen
       // to be aimed at the light.
-      float steep = smoothstep(0.35, 2.6, length(slope) * fine);
+      float steep = smoothstep(1.10, 4.20, length(slope) * fine);
       vec3 horizonLight = intoWater(texture2D(tDiffuse, vec2(skyUv.x, uSkyV.x)).rgb, 0.0);
 
-      water = mix(water, horizonLight, steep * 0.30 * (0.4 + 0.6 * uWeave));
+      water = mix(water, horizonLight, steep * 0.16 * (0.4 + 0.6 * uWeave));
 
-      water += uSunTint * glint * 0.9;
+      water += uSunTint * glint * 1.35;
 
       gl_FragColor = vec4(mix(painted, water, key), 1.0);
     }

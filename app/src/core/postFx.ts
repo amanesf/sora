@@ -11,6 +11,7 @@ import { PuddleShader } from '../effects/puddleShader';
 import { RainShader } from '../effects/rainShader';
 import { NearRainShader } from '../effects/nearRain';
 import { GoldenLightShader } from '../effects/goldenLight';
+import { FinalGradeShader } from '../effects/finalGrade';
 import { relightForDay, type Daylight } from './daylight';
 import { HorizonHazeShader } from '../effects/horizonHaze';
 import { FRAME_WIDTH, FRAME_HEIGHT, type FrameRect } from './frame';
@@ -25,6 +26,7 @@ import {
   WATER_SKY_V1,
 } from '../scene/puddle';
 import type { Ripples } from '../scene/ripples';
+import { FINAL_CONTRAST, FINAL_SATURATION } from '../scene/settings';
 
 export interface PostFx {
   /** The finished picture. Nothing draws to the canvas any more — this goes to
@@ -228,6 +230,17 @@ export function createPostFx(renderer: THREE.WebGLRenderer, scene: THREE.Scene, 
   const goldenPass = new ShaderPass(GoldenLightShader);
   composer.addPass(goldenPass);
 
+  // ...and the grade, last of all and over everything (effects/finalGrade.ts).
+  const gradeFinalPass = new ShaderPass(FinalGradeShader);
+  gradeFinalPass.uniforms.uSaturation.value = FINAL_SATURATION;
+  gradeFinalPass.uniforms.uContrast.value = FINAL_CONTRAST;
+  // Identity is a real state — it is what a capture asks for when it wants the
+  // frame the upstream constants were fitted against — so the pass takes itself
+  // out of the chain rather than running a no-op.
+  gradeFinalPass.enabled = Math.abs(FINAL_SATURATION - 1) > 1e-3
+    || Math.abs(FINAL_CONTRAST - 1) > 1e-3;
+  composer.addPass(gradeFinalPass);
+
   const setSize = (width: number, height: number) => {
     composer.setSize(width, height);
     kuwaharaPass.setSize(width, height);
@@ -347,7 +360,7 @@ export function createPostFx(renderer: THREE.WebGLRenderer, scene: THREE.Scene, 
     // The beam is made of the same light, and only exists while it is low
     // enough to rake (effects/goldenLight.ts's uDusk).
     goldenPass.uniforms.uSunTint.value.set(sun.r, sun.g, sun.b);
-    goldenPass.uniforms.uDusk.value = day.dusk;
+    goldenPass.uniforms.uElevationDeg.value = day.elevationDeg;
 
     hazeDay = day;
     // The band that fills the bottom of the sky was a fixed pale midday blue
