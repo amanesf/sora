@@ -507,7 +507,23 @@ export const RainShader = {
       //
       // fy runs 0 to the cell height and id is the drop's own hash, so this
       // stays in the low tens and the noise stays smooth.
-      float broken = 0.62 + 0.38 * vnoise2(vec2(col * 3.7 + seed, fy * 0.35 + id * 57.0));
+      //
+      // ...and sampled at a frequency the *streak* sets, which is the part that
+      // was still wrong and is what the dotted-line rain was.
+      //
+      // fy * 0.35 is a frequency in pixels, and a mark's length is not. The
+      // near layer's cell is 150px, so the noise ran through 52 units along it
+      // — one period every three pixels of an 82px streak. That is not
+      // scintillation along a drop, it is a dashed line, and it landed hardest
+      // on exactly the long marks that are supposed to read as motion. The mid
+      // layer was the same: a 31px mark chopped at a period of three.
+      //
+      // Two periods per streak, whatever the streak is: fy runs 0 to the cell
+      // height, the mark occupies lenPx of that, so dividing by the length
+      // makes the irregularity a property of the drop rather than of the grid
+      // it happens to be drawn on. Long streaks now vary gently along
+      // themselves and points are still points.
+      float broken = 0.62 + 0.38 * vnoise2(vec2(col * 3.7 + seed, fy * (2.0 / lenPx) + id * 57.0));
 
       // Energy: the same drop, smeared further, is fainter per pixel — so a
       // streak that rolled long comes out dimmer than one that rolled short.
@@ -721,9 +737,21 @@ export const RainShader = {
       // layer, because thinning a mark without adding marks only removes rain.
       // The count is free: a layer is one hash test per pixel whatever its
       // density (see the note above on what actually limits it).
-      vec2 farD = dropLayer(vUv, 5.0, 16.0, 4.1, 0.85, mix(0.06, 0.13, heavy), 1.0);
-      vec2 midD = dropLayer(vUv, 9.0, 34.0, 0.83, 0.95, mix(0.14, 0.42, heavy), 7.0);
-      vec2 nearD = dropLayer(vUv, 46.0, 150.0, 0.31, 1.05, mix(0.0, 0.38, heavy), 23.0);
+      // Quartered, in the density and nowhere else.
+      //
+      // The density is the fraction of cells that hold a drop at all, so
+      // dividing it divides the *number* of drops and changes nothing about any
+      // of them: the marks that are left are the same length, the same width,
+      // the same brightness and the same lean as before, with four times as
+      // much empty sky between them. Every other lever here would have made
+      // less rain by making worse rain — thinning the marks takes them under a
+      // pixel, dimming them takes them under the sky they are drawn against,
+      // and widening the spacing moves the grid the fall offset is indexed
+      // against, which is the one thing in this function that may not move
+      // (see the note at the top of it).
+      vec2 farD = dropLayer(vUv, 5.0, 16.0, 4.1, 0.85, mix(0.015, 0.033, heavy), 1.0);
+      vec2 midD = dropLayer(vUv, 9.0, 34.0, 0.83, 0.95, mix(0.035, 0.105, heavy), 7.0);
+      vec2 nearD = dropLayer(vUv, 46.0, 150.0, 0.31, 1.05, mix(0.0, 0.095, heavy), 23.0);
 
       // The bottom of the slider is a drizzle you can barely see: the marks
       // fade in over the first third of it rather than appearing at full

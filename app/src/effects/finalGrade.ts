@@ -47,6 +47,28 @@ export const FinalGradeShader = {
      * picture sits between the wet road and the deep water. */
     uPivot: { value: 0.5 },
     /**
+     * Exposure, in stops-worth of linear gain, applied before everything else
+     * in this pass.
+     *
+     * The picture is a late-afternoon street and it was reading dark — not dark
+     * in the way a low sun is dark, which is a warm light raking across a
+     * mostly shadowed frame, but dark in the way an under-exposed photograph
+     * is: the whole range sitting low with nothing near the top of it.
+     *
+     * A gain in *linear* light rather than a lift in display space, and the
+     * difference is the whole reason it is a separate uniform instead of a
+     * nudge to the contrast pivot. A display-space lift is an addition: it
+     * moves black off black and washes the picture out, which on a frame whose
+     * subject is deep navy water is the one thing that cannot happen. A linear
+     * gain is what opening the aperture does — it scales every ratio in the
+     * frame, so the water stays as much darker than the cloud as it was and
+     * simply arrives with more light in it.
+     *
+     * It runs first, so the contrast below pivots on the brightened mid rather
+     * than dragging the picture back down about the old one.
+     */
+    uExposure: { value: 1 },
+    /**
      * The split: what colour the highlights lean, and what colour the shadows
      * lean, in that order.
      *
@@ -78,12 +100,21 @@ export const FinalGradeShader = {
     uniform float uSaturation;
     uniform float uContrast;
     uniform float uPivot;
+    uniform float uExposure;
     uniform vec3 uSplitWarm;
     uniform vec3 uSplitCool;
     varying vec2 vUv;
 
     void main() {
       vec3 c = texture2D(tDiffuse, vUv).rgb;
+
+      // Exposure, in linear light — see uExposure. A round trip through gamma
+      // for two pow()s, which is what makes this an exposure rather than a
+      // brightness slider: the picture gets more light in it instead of being
+      // shifted up the range.
+      if (uExposure != 1.0) {
+        c = pow(max(pow(max(c, 0.0), vec3(2.2)) * uExposure, 0.0), vec3(1.0 / 2.2));
+      }
 
       // Contrast, about the pivot. Kept in display space because that is where
       // the eye's idea of "contrast" lives and where the picture is finished:

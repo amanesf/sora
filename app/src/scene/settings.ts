@@ -144,6 +144,38 @@ export const HOUR = 16.8;
  */
 export const OPENING_T = 6300;
 
+/**
+ * ...and then the front door is opened at random after all.
+ *
+ * Everything above is still true about *this* frame: 6300 is a measured, chosen
+ * second and it is a good one. What it cannot be is the only one. A picture
+ * whose sky is the same sky every visit has a sky that may as well be painted,
+ * and the whole apparatus underneath — clusters born on the wind, growing,
+ * decaying and reseeded (scene/cloudField.ts) — exists to make a sky that keeps
+ * happening. Handing every visitor the identical opening second spends all of
+ * that on one arrangement.
+ *
+ * The reason it was pinned was that a random second is the good composition
+ * about half the time and a smear of low cloud across one corner the other
+ * half. That was measured before the clusters were half again as wide
+ * (TIER_RADIUS_SCALE) and before the camera stopped framing a view — the
+ * failure mode it was avoiding was "the water fills with small flat cloud",
+ * which is what a puddle imaging the whole hemisphere at the old sizes did with
+ * an unlucky draw.
+ *
+ * So: a random offset, in whole tier-crossings' worth of simulated time, on top
+ * of the chosen second. The sky is a different one every visit and it is drawn
+ * from the same distribution the chosen one came out of, rather than from the
+ * first few minutes of the simulation, which are not representative of anything
+ * — the field is still filling in.
+ *
+ * `?t=` overrides it exactly as before, so every capture and every measurement
+ * in scripts/ is as reproducible as it ever was. This is the only randomness in
+ * the app, and it is in the one place where a fixed value is a claim that the
+ * weather is not weather.
+ */
+export const OPENING_SPREAD = 36000;
+
 /** 10x — sakura's default. A tower's ten-minute life in one minute, so the
  * sky is visibly happening while you watch it. */
 export const SPEED = 10;
@@ -182,8 +214,39 @@ export const WEAVE = 0.62;
  * road keeps its warmth apart from it, and not so much that the illustration
  * stops looking like the illustration it is.
  */
-export const FINAL_SATURATION = 1.16;
-export const FINAL_CONTRAST = 1.10;
+/**
+ * 1.55 — about two thirds of a stop of extra light, and the largest single
+ * number in this file.
+ *
+ * The picture reads dark, and it is worth being precise about which kind of
+ * dark, because the two want opposite fixes. A low sun is dark by *shape*: a
+ * warm light raking across a frame that is mostly shadow, with the range still
+ * reaching the top wherever the light lands. This frame was dark by *level* —
+ * the whole range sitting low, the cloud's crown not far above the road, the
+ * water's navy nearly at the floor.
+ *
+ * A linear gain, applied in effects/finalGrade.ts before its contrast, because
+ * that is what opening the aperture does: every ratio in the frame survives, so
+ * the water stays exactly as much darker than the cloud as it was, and the
+ * illustration is not washed toward grey the way a display-space lift would
+ * wash it.
+ */
+export const FINAL_EXPOSURE = 1.55;
+
+/**
+ * ...and the other two rise to meet it, a little.
+ *
+ * Exposure is the one operation here that does not change how the picture is
+ * *shaped*, which is what makes it safe to move by this much and also what
+ * leaves something behind. More light through the same curve puts more of the
+ * frame into the upper half of the range, where a display-space contrast has
+ * less room to work and where the eye reads colour as paler than it measures.
+ * So both go up by roughly the fraction the exposure did — enough to hold the
+ * separation and the blue where they were before the light was raised, not
+ * enough to be a second look.
+ */
+export const FINAL_SATURATION = 1.26;
+export const FINAL_CONTRAST = 1.18;
 
 /** 60. Nobody is being asked to choose, so the app draws at the rate it was
  * built for and the capture harness can still say `?fps=30`. */

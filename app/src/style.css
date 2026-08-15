@@ -1,13 +1,26 @@
 :root {
   color-scheme: dark;
 
-  /* The picture is deliberately wider than the phone and hangs off both edges:
-     10% of the screen width past the left, 5% past the right. So it is 115%
-     wide and shifted -10%, and the body clips the rest. Bleeding the image off
-     the edges is what stops a landscape picture reading as a small letterboxed
-     card floating in a portrait page. */
-  --bleed-left: 10vw;
-  --bleed-right: 5vw;
+  /* No bleed. The picture is exactly as wide as the screen and every column of
+     the photograph is on it.
+
+     It used to hang 10% of the screen width past the left edge and 5% past the
+     right, on the reasoning that bleeding a landscape picture off the edges is
+     what stops it reading as a small letterboxed card floating in a portrait
+     page. That is a real effect and it was the wrong trade here, because of
+     what is in those columns. This is one photograph, composed once: the pole
+     and the grass are hard against the left edge and the girl's shoes and the
+     stones are hard against the right, and 15% of the screen's width is most of
+     both. The picture was being cropped at exactly the two places its author
+     put something.
+
+     What the bleed was buying is bought instead by the page painting its own
+     light around the picture (core/compose.ts's pageColour), which did not
+     exist when these were set — the picture already sits in a lit field rather
+     than on a black card, so it does not need to run off the edge to avoid
+     looking like one. */
+  --bleed-left: 0vw;
+  --bleed-right: 0vw;
 
   /* The reference frame (core/frame.ts FRAME_WIDTH/HEIGHT). Anything taller
      than what this aspect gives is not stretched — core/frame.ts crops a

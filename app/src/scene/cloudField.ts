@@ -137,6 +137,33 @@ function convectiveShape(rand: () => number, weather: number, sheared: boolean):
  * (see handoff.md §1), so the summer-sky state of this field starts from a
  * distribution that is already measured rather than from a fresh guess.
  */
+/**
+ * 1.5 — every cluster half again as wide as the fitted arrangement made it.
+ *
+ * The tier radii below were solved against the reference's per-elevation cloud
+ * coverage, and they were solved for a *window*: a view of the sky at the
+ * camera's own field, one to one. This app does not show that view to anybody.
+ * It shows a puddle, and the puddle images the hemisphere inside a few hundred
+ * rows — core/frame.ts's waterBandRect renders the narrow band the water reads
+ * and the water magnifies it, so a cloud that filled a third of the window's
+ * height crosses a much smaller part of the picture the viewer is actually
+ * looking at. The clouds have been coming out too small for the frame they are
+ * seen in ever since the camera stopped framing a view.
+ *
+ * Applied as a radius scale rather than by raising CLOUD, and the difference
+ * matters: coverage decides how many clusters exist and which tiers make towers
+ * at all (see scene/settings.ts's CLOUD, which has been pulled the wrong way
+ * once already for a reason that was not coverage's). This makes the same sky —
+ * the same number of masses, the same tiers, the same distribution — out of
+ * larger cloud, which is what "not big enough" describes.
+ *
+ * It reaches only the radius, so the heights are unchanged and a cumulus gets
+ * wider rather than taller. That is the right way round for this: these are
+ * already 8-10km-deep towers, and scaling them in all three axes would move the
+ * anvils out of the band the water reads.
+ */
+const TIER_RADIUS_SCALE = 1.5;
+
 const TIERS: TierSpec[] = [
   {
     name: 'tower',
@@ -632,7 +659,7 @@ export function createCloudField(
     // blue between them, and no number of extra slots fixes that as reliably as
     // making each one bigger does.
     const radius = (tier.radLo + rand() * (tier.radHi - tier.radLo)) *
-      (isDeck ? THREE.MathUtils.lerp(1, 1.8, overcast) : 1);
+      (isDeck ? THREE.MathUtils.lerp(1, 1.8, overcast) : 1) * TIER_RADIUS_SCALE;
     // A pre-rain sky is lower and flatter; a clear one is shallow fair-weather
     // cumulus. Both come out of the same tier by moving base and top, not by
     // swapping in different-looking clouds.

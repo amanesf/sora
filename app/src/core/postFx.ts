@@ -25,7 +25,7 @@ import {
   WATER_SKY_V1,
 } from '../scene/puddle';
 import type { Ripples } from '../scene/ripples';
-import { FINAL_CONTRAST, FINAL_SATURATION } from '../scene/settings';
+import { FINAL_CONTRAST, FINAL_EXPOSURE, FINAL_SATURATION } from '../scene/settings';
 
 export interface PostFx {
   /** The finished picture. Nothing draws to the canvas any more — this goes to
@@ -235,11 +235,13 @@ export function createPostFx(renderer: THREE.WebGLRenderer, scene: THREE.Scene, 
   const gradeFinalPass = new ShaderPass(FinalGradeShader);
   gradeFinalPass.uniforms.uSaturation.value = FINAL_SATURATION;
   gradeFinalPass.uniforms.uContrast.value = FINAL_CONTRAST;
+  gradeFinalPass.uniforms.uExposure.value = FINAL_EXPOSURE;
   // Identity is a real state — it is what a capture asks for when it wants the
   // frame the upstream constants were fitted against — so the pass takes itself
   // out of the chain rather than running a no-op.
   gradeFinalPass.enabled = Math.abs(FINAL_SATURATION - 1) > 1e-3
-    || Math.abs(FINAL_CONTRAST - 1) > 1e-3;
+    || Math.abs(FINAL_CONTRAST - 1) > 1e-3
+    || Math.abs(FINAL_EXPOSURE - 1) > 1e-3;
   composer.addPass(gradeFinalPass);
 
   const setSize = (width: number, height: number) => {

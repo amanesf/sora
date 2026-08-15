@@ -24,7 +24,7 @@ import {
   WATER_SKY_V1,
 } from './scene/puddle';
 import {
-  CLOUD, DRIZZLE, FRAME_RATE, HOUR, OPENING_T, RAIN, SPEED, WATER, WEAVE,
+  CLOUD, DRIZZLE, FRAME_RATE, HOUR, OPENING_SPREAD, OPENING_T, RAIN, SPEED, WATER, WEAVE,
 } from './scene/settings';
 import { createRipples } from './scene/ripples';
 
@@ -506,7 +506,10 @@ function applyControls(rainTime: number): void {
 // and its first frame is chosen — see there.
 const frozen = query.get('t');
 let frozenTime: number | null = frozen !== null ? Number(frozen) : null;
-let simTime = frozenTime ?? OPENING_T;
+// The sky the app opens on: the chosen second, plus a random run-up, so no two
+// visits get the same arrangement of cloud (scene/settings.ts's OPENING_SPREAD).
+// `?t=` still pins it, which is what keeps every capture reproducible.
+let simTime = frozenTime ?? (OPENING_T + Math.random() * OPENING_SPREAD);
 
 // The drops' own clock, in *real* seconds — see effects/rainShader.ts.
 //

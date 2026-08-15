@@ -76,8 +76,16 @@ export const GoldenLightShader = {
      * This is the one direction the paragraph above does not warn against.
      * Cutting count and size together is a ninth of the light; cutting the
      * count alone is half of it, which is what half as much rain looks like.
+     *
+     * Quartered again, from 0.0425, for the reason the paragraph above gives
+     * and by the same lever: this is the count and only the count. It stays in
+     * step with the drop layers in effects/rainShader.ts and the ring rate in
+     * effects/puddleShader.ts, which it has to — they are one rain seen three
+     * times, on the way down, at the moment it is lit, and where it lands, and
+     * a rain that is four times thinner in the air than it is on the water is
+     * not a quieter rain, it is two weathers in one frame.
      */
-    uDensity: { value: 0.0425 },
+    uDensity: { value: 0.0106 },
     /**
      * The sparkle: points of light that hang in the air and blink, as distinct
      * from the rain, which falls.
