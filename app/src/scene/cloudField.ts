@@ -138,36 +138,36 @@ function convectiveShape(rand: () => number, weather: number, sheared: boolean):
  * distribution that is already measured rather than from a fresh guess.
  */
 /**
- * 1.5 — every cluster half again as wide as the fitted arrangement made it.
+ * 1.0 — and the note is here because 1.5 was tried and made the cloud wrong.
  *
- * The tier radii below were solved against the reference's per-elevation cloud
- * coverage, and they were solved for a *window*: a view of the sky at the
- * camera's own field, one to one. This app does not show that view to anybody.
- * It shows a puddle, and the puddle images the hemisphere inside a few hundred
- * rows — core/frame.ts's waterBandRect renders the narrow band the water reads
- * and the water magnifies it, so a cloud that filled a third of the window's
- * height crosses a much smaller part of the picture the viewer is actually
- * looking at. The clouds have been coming out too small for the frame they are
- * seen in ever since the camera stopped framing a view.
+ * "The clouds are not big enough" is a true observation with two available
+ * answers, and this file offers both: make each mass wider, or put more of them
+ * in the sky. Scaling the radius looks like the direct one and it is not,
+ * because of what a radius means downstream. scene/clouds.ts sizes every lobe
+ * as a fraction of its level's radius — `radius * 0.98 * ...`, capped at
+ * `radius * grainCap` — so a cluster 1.5x wider is built from the same number
+ * of lobes, each 1.5x bigger. The mass grows and its *grain* grows with it, and
+ * the grain is the one thing here that was measured rather than chosen: the
+ * reference's silhouette bumps run about 35-41px, and those constants were
+ * fitted against them. At 1.5 the cloud came out coarse and blobby — bigger,
+ * and no longer a cumulus.
  *
- * Applied as a radius scale rather than by raising CLOUD, and the difference
- * matters: coverage decides how many clusters exist and which tiers make towers
- * at all (see scene/settings.ts's CLOUD, which has been pulled the wrong way
- * once already for a reason that was not coverage's). This makes the same sky —
- * the same number of masses, the same tiers, the same distribution — out of
- * larger cloud, which is what "not big enough" describes.
+ * Doing it properly means scaling the radius up, the grain caps down by the
+ * same factor and the lobe count up by its square to hold the density, which is
+ * 2.25x the geometry in a scene whose tower clusters are already ~1150 lobes
+ * each. That is a real change with a real cost and it should be made
+ * deliberately, not as a side effect of a size complaint.
  *
- * It reaches only the radius, so the heights are unchanged and a cumulus gets
- * wider rather than taller. That is the right way round for this: these are
- * already 8-10km-deep towers, and scaling them in all three axes would move the
- * anvils out of the band the water reads.
+ * So the sky gets the other answer instead — more cloud rather than bigger
+ * cloud, in the tier counts below — and every lobe keeps the size it was
+ * fitted at.
  */
-const TIER_RADIUS_SCALE = 1.5;
+const TIER_RADIUS_SCALE = 1.0;
 
 const TIERS: TierSpec[] = [
   {
     name: 'tower',
-    count: 4,
+    count: 6,
     zNear: 15,
     zSpan: 6,
     baseAlt: 1.4,
@@ -188,7 +188,7 @@ const TIERS: TierSpec[] = [
   },
   {
     name: 'cumulus',
-    count: 10,
+    count: 15,
     zNear: 6,
     zSpan: 10,
     baseAlt: 1.4,
@@ -209,7 +209,7 @@ const TIERS: TierSpec[] = [
   },
   {
     name: 'deck-near',
-    count: 26,
+    count: 38,
     zNear: 17,
     zSpan: 7,
     baseAlt: 2.3,
@@ -230,7 +230,7 @@ const TIERS: TierSpec[] = [
   },
   {
     name: 'deck-mid',
-    count: 22,
+    count: 33,
     zNear: 30,
     zSpan: 11,
     baseAlt: 2.2,
@@ -246,7 +246,7 @@ const TIERS: TierSpec[] = [
   },
   {
     name: 'bank-far',
-    count: 15,
+    count: 22,
     zNear: 55,
     zSpan: 21,
     baseAlt: 1.6,
@@ -288,7 +288,7 @@ const TIERS: TierSpec[] = [
   // squashed flat, and almost no boil (ice cloud does not convect).
   {
     name: 'altocumulus',
-    count: 16,
+    count: 24,
     // 4.6-5.9km, above the cumulus tops and below the anvils. At 22-36km out
     // that puts it just above mid-frame — the band of small regular lumps
     // ("羊雲") that sits between the low deck and the high cirrus.

@@ -185,8 +185,15 @@ export const PuddleShader = {
      * The sky keeps the full displacement, and the asymmetry is the point: a
      * reflected sky has no thin structure to cut, which is why water can fold
      * it as hard as it likes and still look like water.
+     *
+     * 0.45 on the coarse gradient, which is six times the displacement the
+     * fine one was allowed and a gentler warp across her than that was. See the
+     * slopeCoarse note in main(): the number that may not be large is the
+     * gradient, not the amplitude, and low-passing the field is what buys the
+     * amplitude back. 0.005 of the frame is about seven pixels of travel over a
+     * field that varies across forty, so a shin bends and does not break.
      */
-    uPhotoWarp: { value: 0.13 },
+    uPhotoWarp: { value: 0.45 },
     /**
      * The water's palette, measured straight off the reference, and the one
      * part of this pass that is fitted rather than reasoned.
@@ -380,13 +387,14 @@ export const PuddleShader = {
       // often the water is struck and nothing else: the same rings, standing in
       // the same water, with twice as much still surface between them.
       //
-      // Quartered again from mix(8.4, 2.8) for the same reason and by the same
-      // lever: the rain is asked to be a quarter of what it was, and the rate
-      // is where that belongs. Amplitude is not — the slider these read is an
-      // intensity and drives a ring's height along with its number, so taking
-      // it down does not thin the rain, it fades it, and a ring visible only at
-      // its loudest is not a ring.
-      float period = mix(33.6, 11.2, uRain);
+      // The rate stays here while the falling rain is quartered, and that is
+      // deliberate. The drop layers and the sparks are rain *in the air*, and
+      // asking for less of it is asking to see fewer streaks. The rings are
+      // rain where it lands, and they are the thing the picture is about — the
+      // reference holds about six ring systems wide enough to count the rings
+      // in. Quartering these as well took them down to one or two, which is not
+      // quieter rain, it is a pool nothing is falling into.
+      float period = mix(8.4, 2.8, uRain);
       float sum = 0.0;
       for (int j = -1; j <= 1; j++) {
         for (int i = -1; i <= 1; i++) {
@@ -426,10 +434,36 @@ export const PuddleShader = {
       return sum * 0.22 * uRain;
     }
 
-    /** The wind chop: three crossing trains, none of them commensurate, so the
-     * surface never repeats inside the time anyone watches it.
+    /** Smooth value noise on the ground plane, and its two-octave sum below.
      *
-     * 'fine' fades the two short trains out with distance and is not a taste
+     * The wind chop was three sine trains for a long time, and every version of
+     * it striped the water. That is not a property of the trains that were
+     * chosen, it is a property of sine: a sinusoid is a stripe, and a sum of
+     * three of them is three stripes crossing. Whichever way they were pointed
+     * the picture got bands — along the line of sight they came out as vertical
+     * bars that perspective could not thin, and turned across the view they
+     * came out as horizontal ones instead, which is the same fault seen from
+     * the other side. There is no bearing that fixes it.
+     *
+     * What the surface is supposed to be is a wind-roughened sheet of water,
+     * and that has no repeat in it at all. So the trains are gone and this is
+     * noise: irregular by construction, with nothing in it that can line up.
+     */
+    float vnoise(vec2 p) {
+      vec2 i = floor(p);
+      vec2 f = fract(p);
+      f = f * f * (3.0 - 2.0 * f);
+      float a = hash21(i);
+      float b = hash21(i + vec2(1.0, 0.0));
+      float c = hash21(i + vec2(0.0, 1.0));
+      float d = hash21(i + vec2(1.0, 1.0));
+      return mix(mix(a, b, f.x), mix(c, d, f.x), f.y) * 2.0 - 1.0;
+    }
+
+    /**
+     * The wind chop: two and a half octaves of that noise, drifting downwind.
+     *
+     * 'fine' fades the shorter octaves out with distance and is not a taste
      * decision. In ground coordinates the chop has a fixed wavelength, so its
      * *screen* wavelength falls with distance and somewhere short of the
      * vanishing line it goes under a pixel — past which sampling it does not
@@ -438,46 +472,16 @@ export const PuddleShader = {
      * sample has to fade to its own mean, which is what a mip level is and what
      * this is. Real distant water behaves the same way for the same reason: at
      * fifty metres a chopped surface is a sheen, not a texture.
+     *
+     * The whole field is advected rather than each octave being given its own
+     * phase speed: wind chop is carried by the wind, so the pattern travels and
+     * evolves, it does not stand still and pulse.
      */
     float chop(vec2 g, float t, float fine) {
-      // Every train runs across the view, and the reason is the vertical
-      // striping this pool has had in it all along.
-      //
-      // These were g.x * 3, g.x * 9 and g.x * 37 — the last one x-dominant
-      // outright. In the plane those are three ordinary wave trains crossing at
-      // three angles. On screen they are not, because of what x *is* here:
-      // ground() reads x as (uv.x − 0.5) · aspect · z, so a ground-space
-      // x-frequency is a screen-space frequency multiplied by the distance, and
-      // its crests run *away* from the viewer. Perspective compresses this
-      // picture vertically and only vertically, so a crest lying along the line
-      // of sight is the one feature that never gets finer with distance: it
-      // stays a bar of the same width from the far lip to the viewer's feet.
-      // The differencing that produces the slope then reads that bar column by
-      // column, the displacement holds nearly constant down each one, and the
-      // pool fills with full-height vertical stripes with hard edges. Isolated
-      // by rendering with and without this function, the whole striping is in
-      // the difference.
-      //
-      // Wind waves have their crests across the wind, and the wind here crosses
-      // the scene rather than running down it. So the x terms come down to a
-      // token — enough that the crests are not dead straight and the three
-      // trains still disagree, not enough for any of them to draw a line
-      // pointing at the vanishing point. What is left is what a puddle in a
-      // breeze looks like: fine bands running across the water, crowding
-      // together toward the far lip because that is what distance does to them.
-      // The amplitudes come down with the turn, and that is arithmetic rather
-      // than taste. Slope, not height, is what the displacement and both light
-      // terms read, and the y direction is the steep one here: ground() has
-      // z ∝ 1/(vanishing − v), so d g.y / d uv.y goes as z² while d g.x / d uv.x
-      // only goes as z. Moving a train's energy from x into y therefore
-      // multiplies the slope it contributes by the distance, and leaving the
-      // heights where they were put the whole far half of the pool into hard
-      // banding — the same fault as before with the stripes lying the other
-      // way. These are the heights that land the surface back on the slope it
-      // was fitted at.
-      float h = sin(g.y * 12.0 + g.x * 0.8 + t * 1.5) * 0.17;
-      h += sin(g.y * 23.0 - g.x * 1.6 - t * 2.2) * 0.09 * fine;
-      h += sin(g.y * 31.0 + g.x * 2.4 + t * 3.3) * 0.05 * fine * fine;
+      vec2 drift = vec2(0.0, -t * 0.13);
+      float h = vnoise((g + drift) * 2.6) * 0.22;
+      h += vnoise((g + drift * 1.7) * 5.9 + 13.0) * 0.12 * fine;
+      h += vnoise((g + drift * 2.4) * 12.5 + 41.0) * 0.06 * fine * fine;
       return h;
     }
 
@@ -598,6 +602,37 @@ export const PuddleShader = {
       float hy = surface(ground(uv + vec2(0.0, e)), t, fine);
       vec2 slope = vec2(hx - h, hy - h) / e;
 
+      // The same surface read bluntly, for the things painted on it.
+      //
+      // This is what puts a ripple on the girl, and it exists because the sharp
+      // slope above cannot. The bound on warping a painted reflection is not
+      // how far it moves, it is how fast the movement *changes* across it: a
+      // warp stays a warp while its gradient is small compared with the
+      // narrowest thing being warped, and past that it stops bending an outline
+      // and starts cutting it. Her shins are about twenty pixels. The slope
+      // above is differenced over one texel, so it carries every wavelength the
+      // surface has, including ones far shorter than that — which is why the
+      // painted layer had to be held down to a fifth of a shin's width and the
+      // ripple crossing her was, in the end, invisible.
+      //
+      // Differencing over 0.03 of the frame instead — about forty pixels — is a
+      // low-pass on the displacement field. What comes back is only the part of
+      // the surface that varies more slowly than she is wide: the chop's long
+      // octave and the body of a ring, not the crest lines and not the rain's
+      // fine rings. That field can be given six times the amplitude and still
+      // have a gentler gradient across her than the old one did, so she visibly
+      // rides the water and no edge in the photograph can be cut.
+      //
+      // Two more evaluations of surface(), which is the expensive function in
+      // this pass. Paid rather than approximated: a coarse difference of the
+      // real surface is guaranteed to agree with the fine one about where the
+      // waves are, and anything cheaper is a second surface that can disagree
+      // with the first about which way the water is tilted.
+      float ec = 0.030;
+      float hcx = surface(ground(uv + vec2(ec, 0.0)), t, fine);
+      float hcy = surface(ground(uv + vec2(0.0, ec)), t, fine);
+      vec2 slopeCoarse = vec2(hcx - h, hcy - h) / ec;
+
       // The displacement, and the two factors that shape it are opposites.
       //
       // (1 − depth) rises toward the far lip, because a slope of a given angle
@@ -630,7 +665,9 @@ export const PuddleShader = {
       // be loud. Her shins are about twenty pixels across, so the painted layer
       // is allowed a fifth of that — enough that the water visibly runs over
       // her and not enough that any edge in the photograph can be cut through.
-      vec2 photoPush = clamp(push * uPhotoWarp, vec2(-0.0028), vec2(0.0028));
+      vec2 photoPush = clamp(
+        slopeCoarse * 0.00075 * fine * (0.45 + 0.55 * (1.0 - depth)) * uPhotoWarp,
+        vec2(-0.0050), vec2(0.0050));
       vec2 warpedUv = refUv + photoPush * uPlateRect.zw * interior;
       float key = keyRaw;
       if (uHasAssets > 0.5 && interior > 0.004) {
