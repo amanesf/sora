@@ -2,7 +2,7 @@ import './style.css';
 import * as THREE from 'three';
 import { createRenderer, watchResize } from './core/renderer';
 import { createCamera, setCameraHorizon } from './core/camera';
-import { visibleRect, applyToCamera } from './core/frame';
+import { visibleRect, applyToCamera, waterBandRect } from './core/frame';
 import { createSky, updateSky } from './scene/sky';
 import { createCloudMaterials } from './scene/clouds';
 import { createCloudField, NO_SHADOW_CAST_LAYER } from './scene/cloudField';
@@ -16,7 +16,13 @@ import { createPostFx } from './core/postFx';
 import { createCloudShadow } from './scene/cloudShadow';
 import { createCloudLayer } from './scene/cloudLayer';
 import { createCompose } from './core/compose';
-import { CAMERA_HORIZON_FRACTION, MIRROR_SUN_AZIMUTH } from './scene/puddle';
+import {
+  CAMERA_HORIZON_FRACTION,
+  MIRROR_SUN_AZIMUTH,
+  WATER_HORIZON_ROW,
+  WATER_SKY_V0,
+  WATER_SKY_V1,
+} from './scene/puddle';
 import { CLOUD, DRIZZLE, FRAME_RATE, HOUR, RAIN, SPEED, WATER, WEAVE } from './scene/settings';
 import { createRipples } from './scene/ripples';
 
@@ -92,7 +98,12 @@ watchResize(renderer, (cssWidth, cssHeight) => {
   const bufferWidth = Math.max(Math.round(rect.width), 1);
   const bufferHeight = Math.max(Math.round(rect.height), 1);
   postFx.setSize(bufferWidth, bufferHeight);
-  applyToCamera(camera, rect);
+  // The camera renders the band the water images, not the whole view — see
+  // core/frame.ts's waterBandRect. Nothing in this app ever looks at the sky
+  // directly, so drawing any of it outside that band is drawing something
+  // nobody sees at the cost of the resolution of what they do.
+  const horizonV = 1 - (WATER_HORIZON_ROW - rect.y) / rect.height;
+  applyToCamera(camera, waterBandRect(rect, horizonV, WATER_SKY_V0, WATER_SKY_V1));
   postFx.setFrameRect(rect);
 
   // Where that band sits on the canvas, in UV with y running up.

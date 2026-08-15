@@ -74,3 +74,57 @@ export function toUvRect(rect: FrameRect): THREE.Vector4 {
     rect.height / FRAME_HEIGHT,
   );
 }
+
+/**
+ * The sub-rect of the frame the *water* images, and what the camera should
+ * render instead of the whole view.
+ *
+ * The water reads a band of the render and magnifies it (scene/puddle.ts's
+ * WATER_SKY_V0/V1). Until this existed, that band was a *crop of a finished
+ * frame*: the sky was drawn across the whole buffer, the water sampled 44% of
+ * its height and 48% of its width, and blew that up 2.07x. Two things followed,
+ * and both of them were costing the picture more than any constant in it.
+ *
+ * **Resolution.** The sky the viewer actually looks at was being drawn at
+ * 663x338 and stretched over 1376x701. Three quarters of the buffer's pixels
+ * were spent on sky the water never shows.
+ *
+ * **Scale.** Every constant in core/postFx.ts — the bloom radius, the Kuwahara
+ * kernel, the macro-contrast scale — is expressed in buffer pixels and was
+ * fitted to be seen 1:1. Magnifying the buffer 2.07x afterwards means all of
+ * them are seen at twice the size they were fitted at. That is precisely why
+ * the reflected cloud reads as a soft blob: its painterly filtering is running
+ * at double scale, and its veiling glare is twice as wide as the value that was
+ * measured against the reference.
+ *
+ * Rendering the band directly fixes both at once and costs nothing — it is the
+ * same buffer, the same geometry, a tighter frustum. The filters land at their
+ * fitted size again, and the water samples something like 1:1.
+ *
+ * The band's aspect is the *water's* aspect by construction, which is the same
+ * isotropy condition effects/puddleShader.ts's uSkyUScale used to enforce by
+ * narrowing the horizontal read: a reflection is a projection of a flat patch
+ * of sky, and a projection does not magnify one axis more than the other.
+ */
+export function waterBandRect(
+  rect: FrameRect,
+  /** Screen v of the water's vanishing line, within `rect`. */
+  horizonV: number,
+  /** The band of the old full-frame render the water read, as v. */
+  skyV0: number,
+  skyV1: number,
+): FrameRect {
+  const span = Math.max(skyV1 - skyV0, 1e-3);
+  const height = span * rect.height;
+  // Width from the water's own aspect: the water covers the full width of the
+  // frame and `horizonV` of its height, so this is what keeps the magnification
+  // equal on both axes.
+  const width = rect.width * span / Math.max(horizonV, 1e-3);
+  return {
+    x: rect.x + (rect.width - width) / 2,
+    // v runs up, rows run down: the top of the band is the *higher* v.
+    y: rect.y + (1 - skyV1) * rect.height,
+    width,
+    height,
+  };
+}

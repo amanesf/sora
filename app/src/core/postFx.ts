@@ -16,9 +16,8 @@ import { relightForDay, type Daylight } from './daylight';
 import { HorizonHazeShader } from '../effects/horizonHaze';
 import { FRAME_WIDTH, FRAME_HEIGHT, type FrameRect } from './frame';
 import {
+  CAMERA_HORIZON_FRACTION,
   GROUND_SCALE,
-  HAZE_TOP_ROW,
-  HORIZON_ROW,
   PUDDLE_MASK,
   PUDDLE_REF,
   WATER_HORIZON_ROW,
@@ -422,20 +421,25 @@ export function createPostFx(renderer: THREE.WebGLRenderer, scene: THREE.Scene, 
     // end is read from. Both are frame rows put through the same crop, so a
     // phone that loses columns off the sides still images the same hemisphere.
     puddlePass.uniforms.uHorizonV.value = rowToV(WATER_HORIZON_ROW);
-    // The band of the render the water reads from (scene/puddle.ts).
-    puddlePass.uniforms.uSkyV.value.set(WATER_SKY_V0, WATER_SKY_V1);
-    // The reflection's magnification, which must be the same on both axes —
-    // see effects/puddleShader.ts's uSkyUScale. Derived here rather than
-    // written down, so it cannot fall out of step with the band above or with
-    // where the water's vanishing line ends up after a crop.
-    puddlePass.uniforms.uSkyUScale.value =
-      rowToV(WATER_HORIZON_ROW) / Math.max(WATER_SKY_V1 - WATER_SKY_V0, 1e-3);
+    // The whole buffer, both ways: the camera is now aimed at exactly the band
+    // the water images (core/frame.ts's waterBandRect), so there is no band to
+    // pick out of the render any more and no horizontal narrowing to keep the
+    // magnification isotropic — the frustum carries both.
+    puddlePass.uniforms.uSkyV.value.set(0, 1);
+    puddlePass.uniforms.uSkyUScale.value = 1;
 
-    const horizonV = rowToV(HORIZON_ROW);
-    horizonPass.uniforms.uHazeV.value.set(horizonV, rowToV(HAZE_TOP_ROW));
-    // The rain's depth axis is measured from the same line: see the rain pass's
-    // uHorizonV.
-    rainPass.uniforms.uHorizonV.value = horizonV;
+    // ...which also means the horizon is no longer in the render at all. The
+    // band starts well above it, so the haze that dissolves the last few
+    // degrees of sky has nothing in frame to work on, and running it would only
+    // wash the bottom of a band that is 20° up.
+    horizonPass.enabled = false;
+    // The rain's perspective is measured from the horizon, which is now off the
+    // bottom of the buffer. Expressed in the band's own v it is negative, and
+    // that is the honest value: the streaks in this band are all well above the
+    // vanishing line, so they should be near their steepest and most parallel.
+    rainPass.uniforms.uHorizonV.value =
+      ((1 - CAMERA_HORIZON_FRACTION) - WATER_SKY_V0) / Math.max(WATER_SKY_V1 - WATER_SKY_V0, 1e-3);
+
     nearRainPass.uniforms.uNearRain.value = NEAR_RAIN;
   };
 

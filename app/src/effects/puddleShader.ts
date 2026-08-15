@@ -138,6 +138,39 @@ export const PuddleShader = {
      */
     uBedColour: { value: new THREE.Vector3(0.075, 0.086, 0.106) },
     /**
+     * How much of the surface's displacement the *painted* reflections take.
+     *
+     * The wires, the pole, the reflected house and the girl are reflections in
+     * the same water as the sky, and until this existed they were the only
+     * things in the picture that a ripple went straight through. The water
+     * moved the sky and left them standing — which is the sort of thing an eye
+     * catches immediately without being able to name, because a surface that
+     * disturbs one reflection and not another is not a surface.
+     *
+     * They are not keyed (they have to survive on top of the live reflection),
+     * so the key cannot say where this applies. The mask's alpha does: the
+     * puddle's filled outline, eroded and feathered, baked by scripts/puddle.js.
+     * Inside it, the photograph is sampled at the displaced position — key and
+     * all, so a wire and its own keyed-ness move together and it does not smear
+     * against the water it is lying on.
+     *
+     * 0.26, not 1.0, and the difference is optics rather than taste.
+     *
+     * A tilted patch of water swings the reflected ray by twice its own slope,
+     * and how far the *image* moves is that angle times the distance to what is
+     * being reflected. The sky is at infinity, so it moves by the full amount.
+     * The wires are perhaps eight metres up and the reflected house maybe
+     * twenty, which is a small fraction of a cloud bank forty kilometres out.
+     *
+     * At 1.0 it showed: a ring crossing a wire displaced it by up to 25 screen
+     * pixels, which on a line one pixel wide is not a bend, it is a break — the
+     * wires came apart into disconnected segments and the pole's reflection
+     * fragmented. Ratios this large are exactly why "apply the same
+     * displacement to everything" is wrong even though the surface is the same
+     * surface.
+     */
+    uPhotoWarp: { value: 0.26 },
+    /**
      * The water's palette, measured straight off the reference, and the one
      * part of this pass that is fitted rather than reasoned.
      *
@@ -244,6 +277,7 @@ export const PuddleShader = {
     uniform vec3 uDayTint;
     uniform float uRainExposure;
     uniform vec3 uBedColour;
+    uniform float uPhotoWarp;
     uniform vec3 uWaterGamma;
     uniform vec3 uWaterGain;
     uniform float uPalette;
@@ -403,46 +437,34 @@ export const PuddleShader = {
       vec2 uv = vUv;
       vec2 refUv = uPlateRect.xy + uv * uPlateRect.zw;
 
-      // The key. Magenta distance, not luminance — see tMask above. The photo's
-      // own paint is (1,0,1), so "both ends up, the middle down" isolates it
-      // from every grey and every sky blue in the frame, and the wires drawn
-      // over it come back at their own soft edges.
-      float key;
+      // What the mask says about this pixel, before anything has moved: how
+      // much water there is (rgb, the magenta distance) and whether it is
+      // inside the puddle's outline at all (alpha — see uPhotoWarp).
+      vec4 mask = texture2D(tMask, refUv);
+      float keyRaw;
+      float interior;
       if (uHasAssets > 0.5) {
-        vec3 m = texture2D(tMask, refUv).rgb;
-        key = smoothstep(0.30, 0.62, min(m.r, m.b) - m.g);
-        // Partial key, squared-ish.
-        //
-        // 61,856 pixels of this frame key partially, at a mean keyness of
-        // 0.514, and nearly all of them are the girl's clear umbrella lying
-        // across the water. On the straight ramp that came out at about 0.68 —
-        // two thirds live sky — and the umbrella read as barely there. Vinyl
-        // that clear does not exist: even the clearest sheet reflects a few
-        // percent off two surfaces, scatters at every crease, and carries its
-        // own ribs and highlights, which is exactly what the illustration
-        // painted. So the middle of the ramp is pulled down while both ends
-        // stay pinned, and what the umbrella passes lands near 0.45 — the water
-        // is visible through it, as a thing seen through vinyl rather than a
-        // hole in it.
-        key = pow(key, 1.9);
+        keyRaw = smoothstep(0.30, 0.62, min(mask.r, mask.b) - mask.g);
+        keyRaw = pow(keyRaw, 1.9);
+        interior = mask.a;
       } else {
         // FALLBACK: no photograph, no key. Everything below the vanishing line
         // is water, with the edge broken up so it is a puddle rather than a
         // horizon. The app is fully itself in this state apart from the street.
         float edge = uHorizonV - 0.035 + 0.02 * sin(uv.x * 9.0) + 0.012 * sin(uv.x * 23.0 + 1.7);
-        key = smoothstep(edge + 0.012, edge - 0.012, uv.y);
+        keyRaw = smoothstep(edge + 0.012, edge - 0.012, uv.y);
+        interior = keyRaw;
       }
 
-      // The photograph, relit for the hour and dimmed by the rain exactly as the
-      // window app's plate is: this street has no light of its own either.
-      vec3 painted = texture2D(tRef, refUv).rgb * uDayTint;
-      if (uRainExposure < 1.0) {
-        painted = pow(max(pow(max(painted, 0.0), vec3(2.2)) * uRainExposure, 0.0), vec3(1.0 / 2.2));
-      }
-      if (uHasAssets < 0.5) painted = uBedColour;
-
-      if (key < 0.002) {
-        gl_FragColor = vec4(painted, 1.0);
+      // Dry road, outside the puddle entirely: nothing here is a reflection and
+      // nothing moves. This is most of the frame, and skipping it here is what
+      // keeps the surface arithmetic off two thirds of the pixels.
+      if (keyRaw < 0.002 && interior < 0.004) {
+        vec3 dry = texture2D(tRef, refUv).rgb * uDayTint;
+        if (uRainExposure < 1.0) {
+          dry = pow(max(pow(max(dry, 0.0), vec3(2.2)) * uRainExposure, 0.0), vec3(1.0 / 2.2));
+        }
+        gl_FragColor = vec4(uHasAssets > 0.5 ? dry : uBedColour, 1.0);
         return;
       }
 
@@ -479,13 +501,43 @@ export const PuddleShader = {
       // 'fine' falls to zero there, because that is also where the waves doing
       // the swinging stop being resolvable. Their product peaks in the upper
       // third of the water and goes quietly to nothing at the lip, which is
-      // where the reflected cloud has to be readable as cloud — the first
-      // version had only the first factor and shredded it.
+      // where the reflected cloud has to be readable as cloud.
+      //
+      // The floor on the depth term is 0.45 rather than 0.25 because the near
+      // water is where the viewer's own feet are, and therefore where every
+      // pressed ring is born. At 0.25 a footfall underfoot moved the sky about
+      // half as much as the same footfall thrown out toward the lip, which is
+      // backwards as an experience whatever it is as optics.
       //
       // Clamped as well, because the far lip's ground coordinates run to
       // infinity and an unclamped slope there samples the whole sky at once.
       vec2 push = slope * 0.00075 * fine * (0.45 + 0.55 * (1.0 - depth));
       push = clamp(push, vec2(-0.018), vec2(0.018));
+
+      // The painted layer rides the same surface (uPhotoWarp). Key and colour
+      // are both read at the displaced position, so a wire and its own
+      // keyed-ness travel together rather than the wire sliding out from under
+      // the hole it is supposed to be filling.
+      vec2 warpedUv = refUv + push * uPlateRect.zw * interior * uPhotoWarp;
+      float key = keyRaw;
+      if (uHasAssets > 0.5 && interior > 0.004) {
+        vec4 moved = texture2D(tMask, warpedUv);
+        key = pow(smoothstep(0.30, 0.62, min(moved.r, moved.b) - moved.g), 1.9);
+      }
+      refUv = warpedUv;
+
+      // The photograph, relit for the hour and dimmed by the rain exactly as the
+      // window app's plate is: this street has no light of its own either.
+      vec3 painted = texture2D(tRef, refUv).rgb * uDayTint;
+      if (uRainExposure < 1.0) {
+        painted = pow(max(pow(max(painted, 0.0), vec3(2.2)) * uRainExposure, 0.0), vec3(1.0 / 2.2));
+      }
+      if (uHasAssets < 0.5) painted = uBedColour;
+
+      if (key < 0.002) {
+        gl_FragColor = vec4(painted, 1.0);
+        return;
+      }
 
       // The mirror. The rendered frame is the reflected hemisphere already
       // (scene/puddle.ts aims the camera up), so this is a remap of the water's

@@ -76,17 +76,17 @@ export const CAMERA_HORIZON_FRACTION = 0.98;
 export const MIRROR_SUN_AZIMUTH = true;
 
 /**
- * Frame rows for the haze band (effects/horizonHaze.ts), in the *rendered*
- * frame — not in the photograph.
+ * The horizon haze band is gone, and it is worth recording why rather than
+ * leaving a reader to wonder where it went.
  *
- * In the window app these were read off the painting, because the painted sea
- * and the rendered sky had to meet. Here the rendered horizon is never seen
- * directly: it is seen in the water, at the far lip. So the band is hung from
- * the rendered horizon itself, keeping the window app's 123-row depth, and the
- * reflection carries it to wherever the water's far edge happens to be.
+ * effects/horizonHaze.ts dissolves the last few degrees of sky above the
+ * horizon into airlight, which is what made the window app's sea meet its sky
+ * without a seam. This app's camera renders only the band of sky the water
+ * images (core/frame.ts's waterBandRect), and that band starts about 20° up.
+ * The horizon is not in the frame at all, so there is nothing for the haze to
+ * dissolve — core/postFx.ts disables the pass rather than running it over a
+ * band it cannot reach.
  */
-export const HORIZON_ROW = 753;
-export const HAZE_TOP_ROW = 630;
 
 /**
  * The screen v at which the water's mirror runs out — the vanishing line of the
