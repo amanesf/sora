@@ -354,16 +354,20 @@ async function main() {
    * a gain to keep its shadow dark while its lit edge rose.
    *
    * So the same three things a colourist would reach for, in the order they are
-   * always reached for, and all in linear light.
+   * always reached for, and all in linear light — and, the part that took two
+   * more passes to get right, actually separate from each other. Exposure
+   * scales, contrast shapes tone, chroma moves colour, and each is allowed to
+   * do only its own job: see CHARACTER_CHROMA for what happens when the middle
+   * one is quietly doing the third one's as well.
    *
    * The three values below were first set to land her at the cloud's own range
    * — 145 against 142 — on the reasoning that matching it was the target. It
    * was not; it was the floor. Matched, she was no longer flat and she was
    * still the quieter of the two, because the cloud is also the brightest thing
    * in the frame and a subject that merely ties the backdrop loses. Where they
-   * sit now is a stop past that, and the stop after this one is not available:
-   * at 2.45/1.70 her 99th percentile reaches 255 and the blouse stops having
-   * folds, which is the same disappearance as the grey skirt at the other end.
+   * sit now is a stop past that, and the stop after that one is not available:
+   * her 99th percentile is at 252 and the blouse stops having folds at 255,
+   * which is the same disappearance as the grey skirt, arrived at from above.
    */
   const CHARACTER_LIFT = 2.30;
   /**
@@ -372,13 +376,19 @@ async function main() {
    * it; pivoting on her median darkens the serge and the hair and opens the
    * blouse and the rim on her legs, which is what "she is flat" actually means.
    *
-   * At 1.60 her range is 173 against the cloud's 141 — wider than the thing she
+   * At 1.50 her range is 173 against the cloud's 141 — wider than the thing she
    * is standing next to, which is the right way round for a subject and is only
    * affordable because the curve is a power about a pivot rather than a gain:
    * the shadow end compresses as it darkens instead of clipping, so the serge
-   * goes to 27 rather than to nothing.
+   * goes to 29 rather than to nothing.
+   *
+   * It was 1.60 while the curve ran on the channels separately, and the drop to
+   * 1.50 is not a retreat: on luminance the same number moves more, because
+   * none of it is being spent spreading the channels apart. 1.60 here reaches
+   * 254 at her 99th percentile against 252, which is the blouse beginning to
+   * go.
    */
-  const CHARACTER_CONTRAST = 1.60;
+  const CHARACTER_CONTRAST = 1.50;
   /**
    * Chroma about luma, so it moves colour without moving the brightness the
    * two constants above just settled. She is not a grey subject — the serge is
@@ -387,12 +397,26 @@ async function main() {
    * what a dark subject loses: chroma read at a distance is a distance, and
    * hers was small because she was dark.
    *
-   * The smallest of the three moves, because it is not the only one making
-   * colour: a power curve on each channel separately spreads them as it opens
-   * the picture, so the contrast above carries chroma with it. 1.40 with that
-   * lands at 0.481 against the cloud's 0.385.
+   * The smallest of the three moves, and it used to be smaller still on paper
+   * and enormous in fact. The contrast above ran on the channels separately,
+   * and a power curve applied per channel spreads them apart: a channel over
+   * the pivot grows while one under it shrinks, which is the definition of
+   * saturating. So a nominal 1.40 arrived as very nearly a doubling — the
+   * serge went 0.42 -> 0.71, the shoes 0.19 -> 0.42 — and the picture read as
+   * sunburnt, because the effect is largest exactly where a channel is
+   * furthest from the others, which on a figure is her skin and her leather.
+   *
+   * Measured at the time and misread: the swatch table said the hues had barely
+   * moved, 223 -> 222 on the serge, and hue holding is what "no colour cast"
+   * looks like, so the number was taken as a clean bill. Saturation was in the
+   * same table, doubled, and it is the one that makes a colour look wrong when
+   * the hue is right. What "unnatural, red?" describes is not a hue at all.
+   *
+   * With the curve on luminance the two are separate again and this constant is
+   * the only thing moving colour, so it says what it does: 1.25, against her
+   * own photographed chroma, taking the serge to 0.48 and her skin to 0.18.
    */
-  const CHARACTER_CHROMA = 1.40;
+  const CHARACTER_CHROMA = 1.25;
   /**
    * Where the contrast pivots: her median in the photograph, 68 of 255,
    * measured over the same weighted pixels the grade is applied to and carried
@@ -445,14 +469,19 @@ async function main() {
         const lit = [0, 1, 2].map(
           (c) => Math.pow(rgb[i * 3 + c] / 255, 2.2) * CHARACTER_LIFT,
         );
-        const shaped = lit.map(
-          (v) => pivot * Math.pow(Math.max(v, 1e-6) / pivot, CHARACTER_CONTRAST),
-        );
-        const luma = 0.2126 * shaped[0] + 0.7152 * shaped[1] + 0.0722 * shaped[2];
+        // The contrast runs on luminance and returns a single factor that all
+        // three channels are scaled by, which is what makes it a contrast:
+        // scaling a colour leaves its ratios, and so its hue and its
+        // saturation, exactly where they were. Running the curve on the
+        // channels separately instead — the first version of this — is a
+        // saturation control wearing a contrast's name. See CHARACTER_CHROMA.
+        const luma = 0.2126 * lit[0] + 0.7152 * lit[1] + 0.0722 * lit[2];
+        const toned = pivot * Math.pow(Math.max(luma, 1e-6) / pivot, CHARACTER_CONTRAST);
+        const tone = toned / Math.max(luma, 1e-6);
         for (let c = 0; c < 3; c++) {
           // Clamped before the encode, not after: a negative channel is what a
           // chroma gain produces at the gamut's edge and it is not a colour.
-          const saturated = Math.min(1, Math.max(0, luma + (shaped[c] - luma) * CHARACTER_CHROMA));
+          const saturated = Math.min(1, Math.max(0, toned + (lit[c] * tone - toned) * CHARACTER_CHROMA));
           const graded = Math.pow(saturated, 1 / 2.2);
           const v = rgb[i * 3 + c] / 255;
           rgb[i * 3 + c] = Math.max(0, Math.min(255, Math.round(255 * (v + (graded - v) * w))));
