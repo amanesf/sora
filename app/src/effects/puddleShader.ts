@@ -473,7 +473,11 @@ export const PuddleShader = {
       if (uHasAssets > 0.5) {
         keyRaw = smoothstep(0.30, 0.62, min(mask.r, mask.b) - mask.g);
         keyRaw = pow(keyRaw, 1.9);
-        interior = mask.a;
+        // The interior, with the encoder's floor taken back off: the asset
+        // carries 1/255 where it means 0, so that no pixel of the key is fully
+        // transparent and WebP cannot discard the key's own colour under it.
+        // See scripts/puddle.js's puddleInterior.
+        interior = clamp(mask.a * (255.0 / 254.0) - (1.0 / 254.0), 0.0, 1.0);
       } else {
         // FALLBACK: no photograph, no key. Everything below the vanishing line
         // is water, with the edge broken up so it is a puddle rather than a

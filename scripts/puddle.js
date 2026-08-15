@@ -290,7 +290,36 @@ async function main() {
       // thirds. Wide, because it is doing the feathering as well.
       const t = Math.max(0, Math.min(1, (near[i] / 255 - 0.34) / 0.30));
       const v = Math.round(255 * t * t * (3 - 2 * t));
-      alpha[i] = v;
+      // Floored at 1, never 0, and this one byte is the difference between the
+      // key surviving the encode and being thrown away.
+      //
+      // WebP does not store the colour of a fully transparent pixel. Every
+      // encoder in libwebp runs a "cleanup transparent area" pass first, which
+      // rewrites the RGB under alpha 0 to whatever compresses best, and there
+      // is no way through sharp to ask for `-exact`. For an ordinary image that
+      // is free — nobody can see the colour of a transparent pixel. This image
+      // is not ordinary: its RGB is the *key* and its alpha is the *interior*,
+      // two independent fields (see the header), and they disagree in exactly
+      // one place — a strip of open water too narrow for the interior's 26px
+      // blur to call it interior at all.
+      //
+      // The gap between the girl's legs is that strip, and it is why her knees
+      // kept being cut. The painted key is magenta all the way down it; the
+      // shipped key went (203,22,241) at row 228 and (214,15,0) at row 230,
+      // because that is where the interior alpha reached 0 and the encoder took
+      // the blue channel away. The shader's key reads the *blue-minus-green*
+      // distance, so it fell from 1.0 to 0.0 across one row, along a straight
+      // horizontal line, right at her knee: live sky above it, flat photograph
+      // below. No constant in the shader could have fixed that, because the
+      // fault was not in the picture, it was in the file.
+      //
+      // Alpha 1 is not transparent, so the cleanup leaves the pixel alone, and
+      // effects/puddleShader.ts subtracts the floor back off before use.
+      // Only where there is a key to protect. Flooring the whole frame works
+      // too and costs 300KB: it hands the encoder a million pixels of road
+      // whose colour it now has to store, when the road's key is zero and
+      // nobody will ever read it.
+      alpha[i] = v > 0 || water[i] > 0 ? Math.max(v, 1) : 0;
       if (v > 128) inside++;
     }
     console.log(`interior       ${(100 * inside / n).toFixed(1)}% of the frame carries displacement`);
