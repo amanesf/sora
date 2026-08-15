@@ -198,35 +198,121 @@ async function main() {
    * legs and shoes above the water's far lip. Weighted by how *un*-keyed each
    * pixel is, so the water inside the ellipses is left exactly alone and only
    * what is drawn on it lifts.
+   *
+   * Which works for one of the two and not for the other, and the difference is
+   * what the key is. Over the puddle, an ellipse is allowed to be crude because
+   * the key is doing the real cutting underneath it: everything the ellipse
+   * catches that is not her is water, and water is exactly what `1 - water`
+   * removes. Above the far lip there is no key — her legs stand on road, which
+   * is painted by nobody — so nothing removes the road, and the ellipse grades
+   * every asphalt pixel it covers. It showed up the moment the grade got strong
+   * enough to see: a bright oval of road around her feet, a disc with her legs
+   * inside it. The street is the one thing in this app that is supposed to be
+   * the photograph and nothing else.
+   *
+   * The discriminator that works up there is colour, and it works because of
+   * what is up there: wet asphalt reflecting a blue sky, and a girl made of
+   * skin and leather. Warmth (r - b) over that ellipse is two populations with
+   * a floor between them — the road piles up around -30 and everything of hers
+   * is above 0 — so the second ellipse asks for warmth as well as position.
+   * This is the region test that the two failures above were reaching for, and
+   * the reason it lands is that it is not a region test: it asks what a pixel
+   * *is*, not what its neighbours are.
    */
   const CHARACTER = [
     // The reflection: skirt, blouse, arm, head, and the umbrella under her.
+    // Cut by the key underneath, so it only has to contain her.
     { cx: 1180, cy: 520, rx: 168, ry: 232 },
-    // Her legs and shoes, on the wet road above the far lip.
-    { cx: 1230, cy: 85, rx: 78, ry: 104 },
+    // Her legs and shoes, on the wet road above the far lip. Nothing is keyed
+    // up here, so this one carries its own cut: warm is her, cool is the road.
+    { cx: 1230, cy: 85, rx: 78, ry: 104, warmOnly: true },
   ];
 
-  function characterMask(maskData) {
-    const n = FRAME_WIDTH * FRAME_HEIGHT;
-    const chosen = new Float32Array(n);
-    let px = 0;
+  /**
+   * Where warmth stops being road and starts being her, in r - b. The floor
+   * between the two populations in this frame is wide — the road's warm tail
+   * ends around -5 and her shadowed skin begins around +10 — so the edges sit
+   * on either side of it rather than at a single threshold.
+   */
+  const CHARACTER_WARM = [0, 24];
+
+  /**
+   * How far the warm cut is grown before it is used, in pixels.
+   *
+   * She is drawn with an ink outline and the ink is neither warm nor cool, so
+   * the cut lands *inside* her own line and leaves it at the photograph's
+   * exposure — which on a figure this size is not a subtle artefact, it is a
+   * grey seam around a graded shoe. Grown by a little more than the line is
+   * wide, the outline comes with her. It also puts a few pixels of road inside
+   * the cut, which is the trade and the right side of it: a lift that follows
+   * her silhouette reads as light behind her, and one that follows an ellipse
+   * reads as a lens smudge.
+   */
+  const CHARACTER_INK = 4;
+
+  /** Largest value within `radius`, on the same field type as boxBlur. */
+  function dilate(field, radius) {
+    const out = new Float32Array(FRAME_WIDTH * FRAME_HEIGHT);
     for (let y = 0; y < FRAME_HEIGHT; y++) {
       for (let x = 0; x < FRAME_WIDTH; x++) {
-        let inside = 0;
+        let max = 0;
+        for (let dy = -radius; dy <= radius; dy++) {
+          for (let dx = -radius; dx <= radius; dx++) {
+            if (dx * dx + dy * dy > radius * radius) continue;
+            const sx = x + dx;
+            const sy = y + dy;
+            if (sx < 0 || sy < 0 || sx >= FRAME_WIDTH || sy >= FRAME_HEIGHT) continue;
+            max = Math.max(max, field[sy * FRAME_WIDTH + sx]);
+          }
+        }
+        out[y * FRAME_WIDTH + x] = max;
+      }
+    }
+    return out;
+  }
+
+  function characterMask(maskData, refData) {
+    const n = FRAME_WIDTH * FRAME_HEIGHT;
+    // Two fields rather than one, because the warm cut has to be grown by the
+    // ink's width and the keyed one must not be — growing that one would push
+    // the grade out over the water at her silhouette, where the key is the
+    // whole point.
+    const keyed = new Float32Array(n);
+    const warm = new Float32Array(n);
+    for (let y = 0; y < FRAME_HEIGHT; y++) {
+      for (let x = 0; x < FRAME_WIDTH; x++) {
         for (const e of CHARACTER) {
           const d = ((x - e.cx) / e.rx) ** 2 + ((y - e.cy) / e.ry) ** 2;
           // Soft to the ellipse's edge, so the lift has no boundary of its own.
-          inside = Math.max(inside, Math.max(0, Math.min(1, (1.0 - d) / 0.35)));
+          const inside = Math.max(0, Math.min(1, (1.0 - d) / 0.35));
+          if (inside <= 0) continue;
+          const i = (y * FRAME_WIDTH + x) * 3;
+          if (!e.warmOnly) {
+            keyed[y * FRAME_WIDTH + x] = Math.max(keyed[y * FRAME_WIDTH + x], inside);
+            continue;
+          }
+          const t = Math.max(0, Math.min(1,
+            (refData[i] - refData[i + 2] - CHARACTER_WARM[0])
+            / (CHARACTER_WARM[1] - CHARACTER_WARM[0])));
+          warm[y * FRAME_WIDTH + x] = Math.max(
+            warm[y * FRAME_WIDTH + x], inside * t * t * (3 - 2 * t),
+          );
         }
-        if (inside <= 0) continue;
-        const i = (y * FRAME_WIDTH + x) * 3;
-        // Only what is drawn: the more water a pixel is, the less it lifts.
-        const water = Math.max(0, Math.min(1,
-          (keyness(maskData[i], maskData[i + 1], maskData[i + 2]) / 255 - 0.30) / 0.32));
-        const w = inside * (1 - water);
-        chosen[y * FRAME_WIDTH + x] = w * 255;
-        if (w > 0.5) px++;
       }
+    }
+
+    const grown = dilate(warm, CHARACTER_INK);
+    const chosen = new Float32Array(n);
+    let px = 0;
+    for (let i = 0; i < n; i++) {
+      const inside = Math.max(keyed[i], grown[i]);
+      if (inside <= 0) continue;
+      // Only what is drawn: the more water a pixel is, the less it lifts.
+      const water = Math.max(0, Math.min(1,
+        (keyness(maskData[i * 3], maskData[i * 3 + 1], maskData[i * 3 + 2]) / 255 - 0.30) / 0.32));
+      const w = inside * (1 - water);
+      chosen[i] = w * 255;
+      if (w > 0.5) px++;
     }
     // Feathered, so the lift arrives without an edge.
     const field = boxBlur(chosen, 4);
@@ -316,15 +402,18 @@ async function main() {
   const CHARACTER_PIVOT = Math.pow(68 / 255, 2.2);
 
   // The key first: the interior and the character both come out of it, and the
-  // photograph's lift depends on the second.
+  // photograph's grade depends on the second. The character also needs the
+  // photograph itself — above the far lip it is the colour, not the key, that
+  // says which pixels are hers.
   const maskRaw = await sharp(maskPath)
     .resize(fit)
     .composite([{ input: retouchSvg, top: 0, left: 0 }])
     .removeAlpha()
     .raw()
     .toBuffer();
+  const refRaw = await sharp(refPath).resize(fit).removeAlpha().raw().toBuffer();
   const interiorAlpha = puddleInterior(maskRaw);
-  const character = characterMask(maskRaw);
+  const character = characterMask(maskRaw, refRaw);
 
   for (const [src, name] of [[refPath, 'ref.webp'], [maskPath, 'mask.webp']]) {
     const meta = await sharp(src).metadata();
@@ -348,7 +437,7 @@ async function main() {
       // which is the same thing at w = 1 and w = 0 and the honest thing
       // between: at the feathered rim she is a blend of graded and un-graded
       // rather than the result of a weaker curve.
-      const rgb = await resized.removeAlpha().raw().toBuffer();
+      const rgb = Buffer.from(refRaw);
       const pivot = CHARACTER_PIVOT * CHARACTER_LIFT;
       for (let i = 0; i < FRAME_WIDTH * FRAME_HEIGHT; i++) {
         const w = character[i] / 255;
