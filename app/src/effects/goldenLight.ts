@@ -53,6 +53,19 @@ export const GoldenLightShader = {
      */
     uElevationDeg: { value: 90 },
     uAspect: { value: 1376 / 768 },
+    /**
+     * What fraction of cells hold a drop at all, before the rain adds to it.
+     *
+     * The count kept being fixed by making each mark brighter, which is the
+     * wrong knob twice over: it makes the field denser-looking as well as
+     * louder, and it clips. This is the knob.
+     *
+     * It also has a floor that is not obvious. Cutting the count *and* the mark
+     * size together at 0.055 took the rain back out of the picture entirely —
+     * the two multiply, and a third as many marks at two thirds the size is a
+     * ninth of the light. Density and size are one decision, not two.
+     */
+    uDensity: { value: 0.085 },
   },
   vertexShader: /* glsl */ `
     varying vec2 vUv;
@@ -69,6 +82,7 @@ export const GoldenLightShader = {
     uniform vec3 uSunTint;
     uniform float uElevationDeg;
     uniform float uAspect;
+    uniform float uDensity;
     varying vec2 vUv;
 
     /**
@@ -155,10 +169,24 @@ export const GoldenLightShader = {
     float sparks(vec2 p, float scale, float speed, float size, float seed) {
       // Fall direction: mostly down, leaned along the beam.
       vec2 fall = normalize(vec2(0.16, -1.0));
-      vec2 q = vec2(p.x * uAspect, p.y) * scale;
-      // Shear the grid so the cells travel with the drops rather than the drops
-      // crossing cell boundaries, which would make them blink at the seams.
-      q -= fall * uTime * speed;
+      vec2 base = vec2(p.x * uAspect, p.y) * scale;
+
+      // Each column falls at its own rate.
+      //
+      // The grid was sheared by one global amount, so every drop in the frame
+      // moved at exactly the same speed in exactly the same direction — which
+      // is a *sheet*, not rain, and it is most of why the field read as regular
+      // however much the positions inside each cell were jittered. Rain looks
+      // random largely because it is at many distances at once, and drops at
+      // different distances cross the frame at visibly different rates.
+      //
+      // Per column rather than per drop, because the shear has to be constant
+      // along the fall or a drop would change speed as it crossed a cell
+      // boundary. A column of sky at one distance is also the honest unit: it
+      // is parallax, so neighbours down the same line share it.
+      float column = floor(base.x);
+      float pace = 0.55 + 1.15 * hash21(vec2(column, seed + 11.7));
+      vec2 q = base - fall * uTime * speed * pace;
       vec2 cell = floor(q);
       vec2 f = fract(q);
 
@@ -168,9 +196,19 @@ export const GoldenLightShader = {
       for (int j = -1; j <= 1; j++) {
         vec2 c = cell + vec2(0.0, float(j));
         vec2 r = vec2(hash21(c + seed), hash21(c + seed + 7.3));
-        if (r.x > 0.15 + 0.42 * uRain) continue;
+        if (r.x > uDensity + 0.20 * uRain) continue;
         vec2 centre = vec2(r.y, hash21(c + seed + 3.1)) * 0.8 + 0.1;
-        vec2 d = (f - centre - vec2(0.0, float(j))) / size;
+
+        // Every drop a different size, and a wide range of them: a field of
+        // marks that are all the same size is read as a pattern in about a
+        // second, whatever their spacing. Squared, so most are small and a few
+        // are much larger — which is what a depth distribution does to a field
+        // of identical objects, and what the reference's own spread of mark
+        // sizes looks like.
+        float grade = hash21(c + seed + 23.9);
+        float mySize = size * (0.45 + 1.30 * grade * grade);
+
+        vec2 d = (f - centre - vec2(0.0, float(j))) / mySize;
         // Stretched along the fall. The measured marks are very nearly round
         // (median 2x2) and the first version took that literally, at which
         // point they read as dust hanging in the air rather than as rain: a
@@ -185,9 +223,13 @@ export const GoldenLightShader = {
         float core = exp(-r2 * 42.0);
         float halo = exp(-r2 * 4.5) * 0.22;
         // Twinkle: a falling drop turns, and its facet catches the sun for part
-        // of the turn. Per-drop phase, so they do not pulse together.
-        float turn = 0.35 + 0.65 * sin(uTime * 5.2 + r.y * 40.0);
-        sum += (core + halo) * max(turn, 0.0);
+        // of the turn. Per-drop phase and per-drop rate, so they do not pulse
+        // together and no two are alike for long.
+        float turn = 0.30 + 0.70 * sin(uTime * (3.4 + 4.6 * r.y) + r.y * 40.0);
+        // ...and a per-drop brightness on top, because a drop's facet either
+        // points at the sun or does not, and most do not.
+        float facet = 0.35 + 0.9 * grade;
+        sum += (core + halo) * max(turn, 0.0) * facet;
       }
       return sum;
     }
@@ -254,9 +296,10 @@ export const GoldenLightShader = {
         // drifting, and the eye knows the difference before it knows anything
         // else about them.
         //
-        // Now: 2.5s, 1.8s and 1.4s across the frame, near to far — nearer drops
+        // Now: 1.2s, 0.9s and 0.7s across the frame, near to far — nearer drops
         // slower because they are, in fact, nearer, and parallax is the whole
-        // reason there are three layers.
+        // reason there are three layers. Each column then varies that by ±50%
+        // of its own (see sparks), so no two lines of rain keep pace.
         //
         // Not the 0.6s a real drop takes, and the overshoot is instructive: at
         // true rain speed with a shutter long enough to see them, each mark
@@ -265,10 +308,10 @@ export const GoldenLightShader = {
         // length. What has to read as falling is the *layer*, not each drop, so
         // the marks travel a visible fraction of the frame per second and stay
         // short enough to be drops.
-        float near = sparks(vUv, 9.0, 3.6, 0.26, 0.0);
-        float mid = sparks(vUv, 26.0, 14.4, 0.15, 31.7);
-        float dust = sparks(vUv, 48.0, 34.0, 0.10, 77.1);
-        float drops = near * 0.62 + mid * 0.80 + dust * 0.24;
+        float near = sparks(vUv, 9.0, 7.6, 0.17, 0.0);
+        float mid = sparks(vUv, 26.0, 29.0, 0.095, 31.7);
+        float dust = sparks(vUv, 48.0, 69.0, 0.062, 77.1);
+        float drops = near * 1.05 + mid * 1.25 + dust * 0.34;
 
         // Where the beam is, mostly. Not exclusively: some light is scattered
         // everywhere and the floor keeps a scatter of sparks across the whole
@@ -292,7 +335,7 @@ export const GoldenLightShader = {
         // glow around it, and a linear ramp spends most of its range on marks
         // that are half water — which measured (1.00, 0.93, 0.86), still two
         // thirds of the way to neutral.
-        lit = mix(lit, core, smoothstep(0.05, 0.32, strength) * 0.94);
+        lit = mix(lit, core, smoothstep(0.03, 0.22, strength) * 0.94);
         lit += gold * strength * 0.30;
       }
 
