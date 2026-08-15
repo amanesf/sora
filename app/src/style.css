@@ -201,8 +201,13 @@ body {
   font-size: 0.78rem;
   letter-spacing: 0.34em;
   text-indent: 0.34em;
-  color: rgba(233, 244, 255, 0.82);
-  text-shadow: 0 1px 10px rgba(2, 10, 22, 0.85);
+  color: rgba(240, 248, 255, 0.96);
+  /* Two shadows: a tight dark one so the strokes hold against whatever the
+     page's own light is doing behind them, and a wide one for separation. The
+     hint is 0.78rem at 0.34em tracking — thin, wide-set type over a graded
+     field is the hardest thing on this page to read, and it is also the only
+     thing the app ever asks anyone to do. */
+  text-shadow: 0 1px 3px rgba(2, 10, 22, 0.95), 0 1px 14px rgba(2, 10, 22, 0.8);
   pointer-events: none;
   animation: hint-breathe 3.6s ease-in-out infinite;
   transition: opacity 900ms ease;
@@ -213,13 +218,19 @@ body {
   animation: none;
 }
 
+/* The breathe, with its floor lifted from 0.42 to 0.7.
+   0.42 on thin tracked-out type over a lit background is not a quiet state, it
+   is an absent one — the hint spent half of every 3.6s cycle being reported as
+   missing. It still breathes, because a line that pulses reads as an
+   invitation and a static one reads as a caption; it just never goes away
+   while it is doing it. */
 @keyframes hint-breathe {
-  0%, 100% { opacity: 0.42; }
-  50% { opacity: 0.92; }
+  0%, 100% { opacity: 0.7; }
+  50% { opacity: 1; }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .hint { animation: none; opacity: 0.7; }
+  .hint { animation: none; opacity: 0.95; }
 }
 
 /* The canvas: the whole page, behind everything. It is opaque and paints the
