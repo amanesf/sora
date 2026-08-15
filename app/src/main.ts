@@ -23,7 +23,9 @@ import {
   WATER_SKY_V0,
   WATER_SKY_V1,
 } from './scene/puddle';
-import { CLOUD, DRIZZLE, FRAME_RATE, HOUR, RAIN, SPEED, WATER, WEAVE } from './scene/settings';
+import {
+  CLOUD, DRIZZLE, FRAME_RATE, HOUR, OPENING_T, RAIN, SPEED, WATER, WEAVE,
+} from './scene/settings';
 import { createRipples } from './scene/ripples';
 
 // `?fit=frame` gives the whole viewport to the picture and hides the title and
@@ -324,8 +326,9 @@ if (stageEl) {
   stageEl.addEventListener('pointerdown', (event) => {
     (event.target as HTMLElement).setPointerCapture?.(event.pointerId);
     // The hint has been read by definition once this has happened, and it does
-    // not come back (style.css).
-    stageEl.classList.add('is-touched');
+    // not come back (style.css). On the root rather than on the stage, because
+    // the hint is no longer inside the picture.
+    document.documentElement.classList.add('is-touched');
     step(event, true);
   });
   stageEl.addEventListener('pointermove', (event) => {
@@ -498,23 +501,12 @@ function applyControls(rainTime: number): void {
 // function of this one number (scene/cloudField.ts), which is what lets
 // scripts/capture.js freeze the scene with ?t= and get the same frame every
 // time no matter what speed the slider was left at.
-// A different sky every time the app is opened.
-//
-// The whole scene is a pure function of simTime, so this needs no extra seed
-// and no extra state: starting the clock at a random point simply lands in a
-// different part of a sequence that never repeats. Every cluster is at a
-// different stage of a different crossing, built from a different generation
-// index, so the arrangement, the shapes and the phases are all new.
-//
-// The range is about 55 hours of simulated time — some 33 tower crossings —
-// which is far more than enough to decorrelate from the last visit while
-// staying well inside the precision where the boil phases stay smooth.
-//
-// `?t=` still wins, which is what keeps scripts/capture.js reproducible: a
-// measurement asks for a specific second and gets that second.
+// The sky the app opens on (scene/settings.ts's OPENING_T), and then whatever
+// follows from it. The window app drew this at random; this one is a picture
+// and its first frame is chosen — see there.
 const frozen = query.get('t');
 let frozenTime: number | null = frozen !== null ? Number(frozen) : null;
-let simTime = frozenTime ?? Math.random() * 200000;
+let simTime = frozenTime ?? OPENING_T;
 
 // The drops' own clock, in *real* seconds — see effects/rainShader.ts.
 //
@@ -532,6 +524,10 @@ const clock = new THREE.Clock();
 
 // When the next frame is due, for the frame rate cap below.
 let nextDraw = 0;
+
+/** How much sun is reaching the street, chased toward what the cloud field says
+ * (see the render loop). Starts open, so the first frame is lit. */
+let sunThrough = 1;
 
 function renderLoop(now: number) {
   requestAnimationFrame(renderLoop);
@@ -577,6 +573,20 @@ function renderLoop(now: number) {
   }
 
   applyControls(rainTime);
+
+  // The sun going behind a cloud.
+  //
+  // The occlusion itself is instantaneous — a cluster either covers the sun's
+  // direction or it does not — and a beam that switched on and off at that rate
+  // would read as a fault rather than as weather. What is actually watched is
+  // slower than the geometry for two reasons: a cumulus edge takes seconds to
+  // cross the disc, and the eye's own adaptation takes seconds more. So the
+  // value is chased rather than assigned, and it *brightens* faster than it
+  // dims — the sun coming out of a cloud is the thing that feels sudden.
+  const throughTarget = 1 - 0.85 * cloudField.sunOcclusion(sunDir);
+  const chase = throughTarget > sunThrough ? 2.4 : 1.1;
+  sunThrough += (throughTarget - sunThrough) * Math.min(dt * chase, 1);
+  postFx.setSunThrough(sunThrough);
   // Before the pass reads them: a ring that expired this frame must not be
   // looped over by the shader on the frame it expired.
   ripples.update(rainTime);

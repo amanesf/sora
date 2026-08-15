@@ -104,6 +104,35 @@ export const DRIZZLE = 0.62;
  */
 export const HOUR = 16.8;
 
+/**
+ * Which second the sky starts on.
+ *
+ * The window app started this at random, and there it was exactly right: that
+ * app is a sky you watch for a while, and a different sky every visit is the
+ * point. This app is a *picture* — one composition, one hour, one weather, and
+ * a pool of water showing a magnified patch of sky about as wide as a single
+ * cumulus. Which second the clock starts on therefore decides whether the first
+ * thing anyone sees is a tower standing over open blue or a smear of low cloud
+ * across one corner, and at random it is the second about as often as the first.
+ * The front door should be the good one.
+ *
+ * Chosen from a measured shortlist rather than by hunting: scripts/audition.js
+ * steps one browser through candidate seconds and reports, for each, how much
+ * of the water is cloud, where the cloud's weight sits, and what share of it is
+ * in a single mass. What it cannot do is pick — the run that produced this
+ * value ranked a flat slab of overcast first, because "one mass, filling the
+ * frame" is exactly what a wall is. So the numbers narrow fourteen candidates
+ * to four and the choice among those four is made by looking, which is the
+ * honest division of labour: a statistic can say which frames are *not* worth
+ * looking at.
+ *
+ * 6300 is a cumulus across the upper water with deep blue under it and the far
+ * lip clear — the reference's own composition, arrived at independently.
+ *
+ * `?t=` still overrides, which is what keeps every capture reproducible.
+ */
+export const OPENING_T = 6300;
+
 /** 10x — sakura's default. A tower's ten-minute life in one minute, so the
  * sky is visibly happening while you watch it. */
 export const SPEED = 10;

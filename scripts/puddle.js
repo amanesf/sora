@@ -102,116 +102,168 @@ async function main() {
     + '</svg>',
   );
 
-  /**
-   * The puddle's *interior*: everything inside its outline, including the
-   * things painted on top of the water.
-   *
-   * The key says "this pixel is water". That is what the reflection needs and
-   * it is not what the *displacement* needs, and the difference is the last
-   * large falsehood in the picture. The wires, the pole, the reflected house
-   * and the girl are all reflections lying on the same surface as the sky, so
-   * when a ring crosses them they must bend with it — but they are not keyed,
-   * because they have to survive on top of the live reflection. Until this
-   * existed the water moved the sky and left every painted reflection standing
-   * perfectly still, which is exactly the sort of thing an eye notices without
-   * being able to say why.
-   *
-   * So: fill the key's holes. Anything not keyed and not reachable from the
-   * frame's border without crossing water is inside the puddle — which is a
-   * flood fill of the *background*, and it needs no hand-drawn outline. Then
-   * erode and blur it, because the puddle's own rim must not move: the water
-   * meets the asphalt at a fixed edge, and displacement has to fade out before
-   * it gets there.
-   *
-   * Carried in the key image's alpha, so it costs no extra request and cannot
-   * be separated from the key it belongs to. The colour channels are untouched,
-   * which is what keeps effects/puddleShader.ts's magenta distance reading
-   * exactly what it read before.
-   */
-  function puddleInterior(data) {
+  /** Separable box blur over a float field, used by both masks below. */
+  function boxBlur(field, radius) {
     const n = FRAME_WIDTH * FRAME_HEIGHT;
-    const water = new Uint8Array(n);
-    for (let i = 0; i < n; i++) {
-      if (keyness(data[i * 3], data[i * 3 + 1], data[i * 3 + 2]) > 0.35 * 255) water[i] = 1;
-    }
-    // Flood the background: non-water, reachable from the border.
-    const outside = new Uint8Array(n);
-    const stack = [];
-    for (let x = 0; x < FRAME_WIDTH; x++) {
-      for (const y of [0, FRAME_HEIGHT - 1]) {
-        const p = y * FRAME_WIDTH + x;
-        if (!water[p] && !outside[p]) { outside[p] = 1; stack.push(p); }
-      }
-    }
-    for (let y = 0; y < FRAME_HEIGHT; y++) {
-      for (const x of [0, FRAME_WIDTH - 1]) {
-        const p = y * FRAME_WIDTH + x;
-        if (!water[p] && !outside[p]) { outside[p] = 1; stack.push(p); }
-      }
-    }
-    while (stack.length) {
-      const p = stack.pop();
-      const x = p % FRAME_WIDTH;
-      const y = (p / FRAME_WIDTH) | 0;
-      for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
-        const nx = x + dx;
-        const ny = y + dy;
-        if (nx < 0 || ny < 0 || nx >= FRAME_WIDTH || ny >= FRAME_HEIGHT) continue;
-        const q = ny * FRAME_WIDTH + nx;
-        if (water[q] || outside[q]) continue;
-        outside[q] = 1;
-        stack.push(q);
-      }
-    }
-    // Inside = water, or a hole the background could not reach.
-    let inside = new Uint8Array(n);
-    for (let i = 0; i < n; i++) inside[i] = outside[i] ? 0 : 1;
-
-    // Pull the edge in, so the rim itself never moves.
-    const ERODE = 7;
-    for (let pass = 0; pass < ERODE; pass++) {
-      const next = new Uint8Array(n);
-      for (let y = 1; y < FRAME_HEIGHT - 1; y++) {
-        for (let x = 1; x < FRAME_WIDTH - 1; x++) {
-          const p = y * FRAME_WIDTH + x;
-          if (!inside[p]) continue;
-          if (inside[p - 1] && inside[p + 1] && inside[p - FRAME_WIDTH] && inside[p + FRAME_WIDTH]) {
-            next[p] = 1;
-          }
-        }
-      }
-      inside = next;
-    }
-
-    // ...and feather what is left, so the displacement arrives gradually rather
-    // than switching on at a line of its own.
-    const RADIUS = 11;
-    let field = Float32Array.from(inside, (v) => v * 255);
+    let src = field;
     for (const horizontal of [true, false]) {
       const out = new Float32Array(n);
       for (let y = 0; y < FRAME_HEIGHT; y++) {
         for (let x = 0; x < FRAME_WIDTH; x++) {
           let sum = 0;
           let count = 0;
-          for (let k = -RADIUS; k <= RADIUS; k++) {
+          for (let k = -radius; k <= radius; k++) {
             const sx = horizontal ? x + k : x;
             const sy = horizontal ? y : y + k;
             if (sx < 0 || sy < 0 || sx >= FRAME_WIDTH || sy >= FRAME_HEIGHT) continue;
-            sum += field[sy * FRAME_WIDTH + sx];
+            sum += src[sy * FRAME_WIDTH + sx];
             count++;
           }
           out[y * FRAME_WIDTH + x] = sum / count;
         }
       }
-      field = out;
+      src = out;
     }
+    return src;
+  }
+
+  /**
+   * The puddle's *interior*: everywhere the water is locally in charge,
+   * including the things painted on top of it.
+   *
+   * The key says "this pixel is water". That is what the reflection needs and
+   * it is not what the *displacement* needs, and the difference is the last
+   * large falsehood in the picture: the wires, the pole, the reflected house
+   * and the girl are all reflections lying on the same surface as the sky, so
+   * when a ring crosses them they must bend with it — but they are not keyed,
+   * because they have to survive on top of the live reflection.
+   *
+   * The first version of this filled the key's holes: anything not keyed and
+   * not reachable from the frame's border without crossing water. That is the
+   * textbook answer and it quietly failed on the one region that matters, the
+   * girl — her legs run off the top of the frame and her umbrella reaches the
+   * right edge, so the flood found its way in and called her background.
+   *
+   * "Locally surrounded by water" has no such hole. Blur the key and ask
+   * whether water dominates the neighbourhood: inside the pool that is 1
+   * whatever is drawn on top, on the road it is 0, and at the rim it falls off
+   * over the blur's own radius — which is also the feather the displacement
+   * needs, since the water meets the asphalt at an edge that must not move.
+   *
+   * Carried in the key image's alpha, so it costs no extra request and cannot
+   * be separated from the key it belongs to.
+   */
+  function puddleInterior(data) {
+    const n = FRAME_WIDTH * FRAME_HEIGHT;
+    const water = new Float32Array(n);
+    for (let i = 0; i < n; i++) {
+      water[i] = keyness(data[i * 3], data[i * 3 + 1], data[i * 3 + 2]) > 0.35 * 255 ? 255 : 0;
+    }
+    const near = boxBlur(water, 26);
     const alpha = Buffer.alloc(n);
-    for (let i = 0; i < n; i++) alpha[i] = Math.max(0, Math.min(255, Math.round(field[i])));
-    let interiorPx = 0;
-    for (let i = 0; i < n; i++) if (alpha[i] > 128) interiorPx++;
-    console.log(`interior       ${(100 * interiorPx / n).toFixed(1)}% of the frame carries displacement`);
+    let inside = 0;
+    for (let i = 0; i < n; i++) {
+      // 0 where less than a third of the neighbourhood is water, 1 by two
+      // thirds. Wide, because it is doing the feathering as well.
+      const t = Math.max(0, Math.min(1, (near[i] / 255 - 0.34) / 0.30));
+      const v = Math.round(255 * t * t * (3 - 2 * t));
+      alpha[i] = v;
+      if (v > 128) inside++;
+    }
+    console.log(`interior       ${(100 * inside / n).toFixed(1)}% of the frame carries displacement`);
     return alpha;
   }
+
+  /**
+   * The girl, as two measured ellipses.
+   *
+   * She is the subject of the picture and she is also the darkest large thing
+   * in it — a reflection, in water, of someone standing against the light. An
+   * illustration can carry that; a screen in daylight cannot, and she was
+   * disappearing into the navy.
+   *
+   * Two attempts to find her automatically are worth recording, because both
+   * failed for the same reason and it is a useful one. Inside the puddle,
+   * everything not keyed is something painted on top of the water, so "large
+   * non-keyed island in the right of the frame" ought to be exactly her. Filling
+   * the key's holes to find those islands leaks: her legs run off the top of the
+   * frame and her umbrella reaches its right edge, so the flood gets in and
+   * calls her background. Asking instead whether water dominates the
+   * neighbourhood works at her outline and fails in her middle — a 53px window
+   * placed inside a 120px-wide figure sees no water at all. A region test cannot
+   * find a large object *by* its surroundings.
+   *
+   * So she is measured, like HORIZON_ROW and every other constant here that
+   * describes this particular frame: her reflection with its umbrella, and her
+   * legs and shoes above the water's far lip. Weighted by how *un*-keyed each
+   * pixel is, so the water inside the ellipses is left exactly alone and only
+   * what is drawn on it lifts.
+   */
+  const CHARACTER = [
+    // The reflection: skirt, blouse, arm, head, and the umbrella under her.
+    { cx: 1180, cy: 520, rx: 168, ry: 232 },
+    // Her legs and shoes, on the wet road above the far lip.
+    { cx: 1230, cy: 85, rx: 78, ry: 104 },
+  ];
+
+  function characterMask(maskData) {
+    const n = FRAME_WIDTH * FRAME_HEIGHT;
+    const chosen = new Float32Array(n);
+    let px = 0;
+    for (let y = 0; y < FRAME_HEIGHT; y++) {
+      for (let x = 0; x < FRAME_WIDTH; x++) {
+        let inside = 0;
+        for (const e of CHARACTER) {
+          const d = ((x - e.cx) / e.rx) ** 2 + ((y - e.cy) / e.ry) ** 2;
+          // Soft to the ellipse's edge, so the lift has no boundary of its own.
+          inside = Math.max(inside, Math.max(0, Math.min(1, (1.0 - d) / 0.35)));
+        }
+        if (inside <= 0) continue;
+        const i = (y * FRAME_WIDTH + x) * 3;
+        // Only what is drawn: the more water a pixel is, the less it lifts.
+        const water = Math.max(0, Math.min(1,
+          (keyness(maskData[i], maskData[i + 1], maskData[i + 2]) / 255 - 0.30) / 0.32));
+        const w = inside * (1 - water);
+        chosen[y * FRAME_WIDTH + x] = w * 255;
+        if (w > 0.5) px++;
+      }
+    }
+    // Feathered, so the lift arrives without an edge.
+    const field = boxBlur(chosen, 4);
+    console.log(`character      ${px} px lifted`);
+    return field;
+  }
+
+  /**
+   * How much brighter she is made: a linear-light gain, so it is a change of
+   * exposure on her and not a contrast curve.
+   *
+   * A full stop of it. 1.22 was the first value — about a quarter of a stop, on
+   * the reasoning that she is backlit and ought to read as a silhouette — and
+   * on a screen she stayed inside the navy. The reasoning was right about the
+   * illustration and wrong about the medium: a painting is looked at in a
+   * gallery's light and this is looked at on a phone, outdoors, next to a
+   * highlight of 250. Against that, a subject at 40 is not a silhouette, it is
+   * absent.
+   *
+   * The aim is still that she reads as backlit — her face and the fold of her
+   * skirt legible, the light still coming from behind her — not that she is lit
+   * from the front. In linear light, so it is an exposure on her rather than a
+   * contrast curve, which is what keeps her own modelling intact while it
+   * moves.
+   */
+  const CHARACTER_LIFT = 2.05;
+
+  // The key first: the interior and the character both come out of it, and the
+  // photograph's lift depends on the second.
+  const maskRaw = await sharp(maskPath)
+    .resize(fit)
+    .composite([{ input: retouchSvg, top: 0, left: 0 }])
+    .removeAlpha()
+    .raw()
+    .toBuffer();
+  const interiorAlpha = puddleInterior(maskRaw);
+  const character = characterMask(maskRaw);
 
   for (const [src, name] of [[refPath, 'ref.webp'], [maskPath, 'mask.webp']]) {
     const meta = await sharp(src).metadata();
@@ -220,17 +272,27 @@ async function main() {
     }
     let resized = sharp(src).resize(fit);
     if (name === 'mask.webp') {
-      // The retouch first, so the interior is computed from the key the app
-      // will actually read.
-      const patched = await resized
-        .composite([{ input: retouchSvg, top: 0, left: 0 }])
-        .removeAlpha()
-        .raw()
-        .toBuffer();
-      resized = sharp(patched, {
+      resized = sharp(maskRaw, {
         raw: { width: FRAME_WIDTH, height: FRAME_HEIGHT, channels: 3 },
-      }).joinChannel(puddleInterior(patched), {
+      }).joinChannel(interiorAlpha, {
         raw: { width: FRAME_WIDTH, height: FRAME_HEIGHT, channels: 1 },
+      });
+    } else {
+      // The character's lift, in linear light so it is an exposure on her
+      // rather than a curve.
+      const rgb = await resized.removeAlpha().raw().toBuffer();
+      for (let i = 0; i < FRAME_WIDTH * FRAME_HEIGHT; i++) {
+        const w = character[i] / 255;
+        if (w < 0.004) continue;
+        const gain = 1 + (CHARACTER_LIFT - 1) * w;
+        for (let c = 0; c < 3; c++) {
+          const v = rgb[i * 3 + c] / 255;
+          const lit = Math.pow(Math.pow(v, 2.2) * gain, 1 / 2.2);
+          rgb[i * 3 + c] = Math.max(0, Math.min(255, Math.round(lit * 255)));
+        }
+      }
+      resized = sharp(rgb, {
+        raw: { width: FRAME_WIDTH, height: FRAME_HEIGHT, channels: 3 },
       });
     }
     await resized

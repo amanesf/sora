@@ -34,11 +34,15 @@
       <p class="title__sub">Walking the Sky, Weaving the Light</p>
     </header>
 
-    <div class="stage">
-      <!-- The only instruction the app gives. It fades on the first press
-           (style.css's .stage.is-touched) and does not come back. -->
-      <p class="stage__hint">水面にふれる</p>
-    </div>
+    <div class="stage"></div>
+
+    <!-- The only instruction the app gives, and it sits *outside* the picture.
+         It was over the water, which is the one place in this app where nothing
+         should be printed: the water is the artwork and it is also the control,
+         so a caption on it is a caption on both. Below the frame it reads as a
+         label for the thing above it, which is what it is. It fades on the
+         first press (style.css) and does not come back. -->
+    <p class="hint">水面にふれる</p>
 
     <!-- Below the picture, in the darkness the canvas paints at the foot of the
          page. The app has no console, so this is the only DOM under the

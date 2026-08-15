@@ -503,9 +503,29 @@ interface Slot {
   handle: CloudClusterHandle | null;
   z: number;
   active: boolean;
+  /** The cluster's rough radius in km, kept so the field can answer how much of
+   * it stands between the camera and the sun — see sunOcclusion. */
+  radius: number;
 }
 
 export interface CloudField {
+  /**
+   * How much cloud stands between the camera and a direction, 0 (clear) to 1
+   * (the sun is behind a tower).
+   *
+   * The reason this exists is that the light in this picture had no cause. The
+   * shafts across the road and the sparks in the air (effects/goldenLight.ts)
+   * held exactly the same strength whatever the sky was doing, so a cumulus
+   * could drift straight across the sun and nothing on the ground would notice
+   * — which is the one thing everybody has actually watched happen.
+   *
+   * Answered from the clusters themselves rather than by rendering anything:
+   * each is a mass of known radius at a known place, so the fraction of the
+   * sun's disc it covers is a comparison of two angles, and the field's total
+   * is the usual product of what each one lets through. About thirty clusters
+   * of arithmetic, once a frame.
+   */
+  sunOcclusion: (direction: THREE.Vector3) => number;
   /** How much cloud, 0 (none) to 1 (raining). Every cluster is rebuilt on the
    * next update so the change is immediate: a slot normally only re-rolls its
    * coverage when it finishes a crossing, which at 1x is up to 102 minutes
@@ -548,6 +568,7 @@ export function createCloudField(
         phase: hash01(i * 13.7 + tier.zNear, 7.3),
         generation: Number.NaN,
         handle: null,
+        radius: 0,
         z: 0,
         active: false,
       });
@@ -720,6 +741,7 @@ export function createCloudField(
     }
     scene.add(handle.group);
     slot.handle = handle;
+    slot.radius = radius;
   }
 
   const wind = new THREE.Vector2();
@@ -757,9 +779,35 @@ export function createCloudField(
     for (const slot of slots) slot.generation = Number.NaN;
   }
 
+  /** See the interface. Transmission through each cluster, multiplied. */
+  const sunOcclusion = (direction: THREE.Vector3): number => {
+    const dir = direction.clone().normalize();
+    let through = 1;
+    for (const slot of slots) {
+      if (!slot.active || !slot.handle) continue;
+      const centre = slot.handle.group.position;
+      const distance = centre.length();
+      if (distance < 1e-3) continue;
+      // Only what is on the sun's side of the sky: a cluster behind the camera
+      // covers nothing, and the dot product is the cheapest way to say so.
+      const along = centre.dot(dir) / distance;
+      if (along <= 0) continue;
+      // Angular radius of the mass, against the angle it sits off the sun.
+      const angularRadius = Math.atan2(slot.radius, distance);
+      const offAxis = Math.acos(Math.min(along, 1));
+      if (offAxis >= angularRadius) continue;
+      // Soft-edged rather than a disc: a cloud has no rim, and a hard test
+      // makes the light switch rather than dim.
+      const covered = 1 - offAxis / angularRadius;
+      through *= 1 - covered * covered * 0.92;
+    }
+    return 1 - through;
+  };
+
   return {
     update,
     setCloudAmount,
+    sunOcclusion,
     stats: () => ({ clusters: slots.filter((s) => s.active).length, rebuilds }),
   };
 }

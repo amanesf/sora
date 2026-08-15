@@ -160,13 +160,16 @@ export const GoldenLightShader = {
       for (int j = -1; j <= 1; j++) {
         vec2 c = cell + vec2(0.0, float(j));
         vec2 r = vec2(hash21(c + seed), hash21(c + seed + 7.3));
-        if (r.x > 0.16 + 0.62 * uRain) continue;
+        if (r.x > 0.24 + 0.70 * uRain) continue;
         vec2 centre = vec2(r.y, hash21(c + seed + 3.1)) * 0.8 + 0.1;
         vec2 d = (f - centre - vec2(0.0, float(j))) / size;
-        // Stretched along the fall, but only gently: the measured marks are
-        // very nearly round (median 2x2), because a drop that small at this
-        // shutter is a dot with a hint of a tail, not a line.
-        d.y *= 0.62;
+        // Stretched along the fall. The measured marks are very nearly round
+        // (median 2x2) and the first version took that literally, at which
+        // point they read as dust hanging in the air rather than as rain: a
+        // still frame cannot show that a dot is falling, and a short tail can.
+        // Still far from a streak — this is a drop caught in a beam, not the
+        // cool grey line effects/rainShader.ts draws.
+        d.y *= 0.46;
         float r2 = dot(d, d);
         // A tight core inside a wide faint halo. The measurement says two
         // pixels across, so the halo is what gives a mark presence and the core

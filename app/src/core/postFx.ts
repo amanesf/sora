@@ -66,6 +66,8 @@ export interface PostFx {
   setWater: (water: {
     time: number; wind: number; weave: number; drizzle: number; palette: number;
   }) => void;
+  /** How much sun is reaching the scene, 0-1 — see the implementation. */
+  setSunThrough: (through: number) => void;
   /** The pressed rings (scene/ripples.ts). Handed over once at startup; the
    * pass reads the same Vector4s the ripple table writes into. */
   setRipples: (ripples: Ripples) => void;
@@ -448,6 +450,20 @@ export function createPostFx(renderer: THREE.WebGLRenderer, scene: THREE.Scene, 
     applyFrame();
   };
 
+  /**
+   * How much of the beam is getting through, 0 (behind a tower) to 1 (clear).
+   *
+   * Scales the whole gold pass — the shafts across the road and the sparks in
+   * the air together — because they are one thing: light from the sun that has
+   * not been stopped. Nothing else in the frame reads it, and deliberately: the
+   * sky and the water are already lit by their own shaders, so applying it
+   * twice would be double-counting a cloud that is drawn right there in the
+   * picture.
+   */
+  const setSunThrough = (through: number) => {
+    goldenPass.uniforms.uAmount.value = through;
+  };
+
   const setWater = (water: {
     time: number; wind: number; weave: number; drizzle: number; palette: number;
   }) => {
@@ -481,6 +497,7 @@ export function createPostFx(renderer: THREE.WebGLRenderer, scene: THREE.Scene, 
     setSize,
     setFrameRect,
     setWater,
+    setSunThrough,
     setRipples,
     assetsReady,
     setDaylight,
