@@ -653,6 +653,22 @@ export const PuddleShader = {
       // highlight is a property of the water's surface and does not care what
       // that surface happens to be reflecting.
       colour = mix(colour, horizonLight, steep * 0.16 * (0.4 + 0.6 * uWeave) * interior);
+
+      // The umbrella's own sheen.
+      //
+      // Lowering the key's exponent makes the vinyl pass less of the live water,
+      // and past a point that stops helping: the canopy is painted almost
+      // colourless, so less water through it just means more nothing. What
+      // makes a clear sheet read as a sheet is not its own colour, it is that
+      // it *reflects* — two air-vinyl interfaces return a few percent of the sky
+      // whatever is behind them, which is why a clear umbrella is visible at all
+      // on a bright day.
+      //
+      // A partial key is exactly where the vinyl is: fully keyed is open water,
+      // unkeyed is the ink of its ribs, and everything between is the canopy.
+      // So this peaks in the middle of that range and is zero at both ends.
+      float vinyl = key * (1.0 - key) * 4.0;
+      colour = mix(colour, horizonLight, vinyl * vinyl * 0.20 * interior);
       colour += uSunTint * glint * 1.35 * interior;
 
       gl_FragColor = vec4(colour, 1.0);

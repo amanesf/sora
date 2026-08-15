@@ -66,6 +66,23 @@ export const GoldenLightShader = {
      * ninth of the light. Density and size are one decision, not two.
      */
     uDensity: { value: 0.085 },
+    /**
+     * The sparkle: points of light that hang in the air and blink, as distinct
+     * from the rain, which falls.
+     *
+     * They are two different things and conflating them cost this pass its
+     * sparkle twice. Making the drops fall properly — 0.7 to 1.2 seconds across
+     * the frame — is what makes them read as rain, and it is also what stops
+     * them reading as glitter, because glitter is *stationary enough to look
+     * at*. The reference has both: falling specks, and a scatter of small
+     * four-pointed flares that sit still and flare.
+     *
+     * So this is its own layer with its own clock. It barely drifts, it blinks
+     * on a per-point cycle, and it is spread over the whole frame rather than
+     * riding the beam — a mote catching the light is not doing so because it is
+     * in a shaft, it is doing so because it turned.
+     */
+    uSparkle: { value: 0.75 },
   },
   vertexShader: /* glsl */ `
     varying vec2 vUv;
@@ -83,6 +100,7 @@ export const GoldenLightShader = {
     uniform float uElevationDeg;
     uniform float uAspect;
     uniform float uDensity;
+    uniform float uSparkle;
     varying vec2 vUv;
 
     /**
@@ -234,6 +252,63 @@ export const GoldenLightShader = {
       return sum;
     }
 
+    /**
+     * The motes: light that hangs rather than falls.
+     *
+     * A grid of points that drift almost imperceptibly and blink on their own
+     * cycles. The blink is the whole effect — a field of steady points is dust
+     * on the lens, and what makes glitter glitter is that each grain is only
+     * alight for part of the time, so the eye keeps catching new ones. Per-point
+     * period as well as phase, because a field blinking on one period is a
+     * strobe.
+     */
+    float motes(vec2 p, float scale, float seed) {
+      vec2 q = vec2(p.x * uAspect, p.y) * scale;
+      // A slow sideways drift, about a frame width every two minutes: enough
+      // that the field is never quite the same twice, far too slow to read as
+      // motion.
+      q += vec2(uTime * 0.012, uTime * -0.004) * scale;
+      vec2 cell = floor(q);
+      vec2 f = fract(q);
+
+      float sum = 0.0;
+      for (int j = -1; j <= 1; j++) {
+        for (int i = -1; i <= 1; i++) {
+          vec2 c = cell + vec2(float(i), float(j));
+          vec2 r = vec2(hash21(c + seed), hash21(c + seed + 4.1));
+          if (r.x > 0.22) continue;
+          vec2 centre = vec2(r.y, hash21(c + seed + 9.7)) * 0.86 + 0.07;
+          // Bigger than a raindrop and shaped like a star, which is the whole
+          // difference between glitter and dust.
+          //
+          // The first version of this drew round points and measured 423 marks
+          // of about five pixels each — present, and completely unnoticeable. A
+          // round dot of light is read as a speck on the lens; four spikes are
+          // read as a *sparkle*, because that is what a small bright source
+          // does to any real optical system and what every illustrator draws
+          // when they mean this. The reference paints them as four-pointed
+          // diamonds for the same reason.
+          vec2 d = (f - centre - vec2(float(i), float(j))) / 0.145;
+          float r2 = dot(d, d);
+          float core = exp(-r2 * 26.0);
+          float halo = exp(-r2 * 2.4) * 0.26;
+          // The spikes: tight across, long along, one pair each way.
+          float across = exp(-d.y * d.y * 150.0) * exp(-abs(d.x) * 2.6);
+          float down = exp(-d.x * d.x * 150.0) * exp(-abs(d.y) * 2.6);
+          core += 0.55 * (across + down);
+
+          // The blink: mostly dark, briefly bright, on its own period.
+          float period = 1.6 + 4.4 * r.y;
+          float phase = fract(uTime / period + r.x * 7.3);
+          // Mostly dark, briefly bright. Not so brief that the field reads as
+          // noise — a mark has to be alight long enough to be looked at.
+          float lit = pow(max(sin(phase * 3.14159), 0.0), 4.0);
+          sum += (core + halo) * lit;
+        }
+      }
+      return sum;
+    }
+
     void main() {
       vec3 colour = texture2D(tDiffuse, vUv).rgb;
       // A low sun is the whole premise: at midday there is no rake and this
@@ -337,6 +412,14 @@ export const GoldenLightShader = {
         // thirds of the way to neutral.
         lit = mix(lit, core, smoothstep(0.03, 0.22, strength) * 0.94);
         lit += gold * strength * 0.30;
+      }
+
+      // The sparkle, over the whole frame and on its own terms — see uSparkle.
+      if (uSparkle > 0.004) {
+        float twinkle = motes(vUv, 17.0, 3.3) + 0.6 * motes(vUv, 38.0, 61.9);
+        float s = twinkle * uSparkle * amount;
+        lit = mix(lit, measured * 1.22, clamp(s * 1.5, 0.0, 0.88));
+        lit += gold * s * 0.35;
       }
 
       gl_FragColor = vec4(lit, 1.0);
