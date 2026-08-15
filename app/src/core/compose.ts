@@ -143,7 +143,7 @@ export function createCompose(): Compose {
             // A faint field of sky under the whole thing, so the clouds are
             // over something rather than floating on the page — the same
             // relationship they have in the picture above.
-            colour = mix(colour, colour + vec3(0.010, 0.030, 0.055), fade);
+            colour = mix(colour, colour + vec3(0.006, 0.018, 0.034), fade);
 
             // The real clouds, with their own shading — not a silhouette. The
             // layer is linear HDR (the cloud material is pre-tonemap), so it
@@ -154,10 +154,21 @@ export function createCompose(): Compose {
             vec4 layer = texture2D(uClouds, s);
             vec3 cloud = layer.rgb / (layer.rgb + 1.0);
 
-            // Deliberately very faint. It lies under the console — the sliders
-            // are DOM on top of this canvas — so anything with real contrast
-            // would be competing with the controls for the same pixels.
-            colour = mix(colour, cloud, layer.a * fade * 0.16);
+            // Deliberately very faint, and three times fainter than it was.
+            //
+            // Two things changed under it. The console it was drawn to sit
+            // beneath is gone — what is there now is the text, which is smaller
+            // and needs the page quieter behind it. And the camera no longer
+            // frames a view of the sky: it frames the narrow band the water
+            // images (core/frame.ts's waterBandRect), magnified about seven
+            // times in solid angle. This layer renders with that same camera,
+            // so what was a distant scatter of cloud became one enormous
+            // close-up of a cumulus filling the lower half of the page — a
+            // second picture under the picture, competing with it.
+            //
+            // At 0.05 it is what it was meant to be: an impression that the
+            // page the picture sits on is lit by the same sky.
+            colour = mix(colour, cloud, layer.a * fade * 0.05);
           }
         }
 
