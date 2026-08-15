@@ -218,14 +218,40 @@ async function main() {
    * This is the region test that the two failures above were reaching for, and
    * the reason it lands is that it is not a region test: it asks what a pixel
    * *is*, not what its neighbours are.
+   *
+   * Two ellipses were also one short, and both of the ones there were had been
+   * drawn to hug her. Hugging left her cut in two places at once:
+   *
+   *  - Her legs run off the top of the frame and the ellipse did not. Its soft
+   *    edge crossed her shins in the frame's last rows, so the grade faded out
+   *    along them — which on a figure whose legs leave the picture reads
+   *    exactly as legs that stop.
+   *  - Between the two was a gap of about a hundred rows, from the waterline
+   *    down to where the lower one began, and her reflected legs run through
+   *    it: graded legs above, ungraded band, graded skirt below.
+   *
+   * The one that reaches the top of the frame has to be the warm one, because
+   * above the waterline the key is not protecting anything. The gap wants the
+   * opposite: her legs in the water are a reflection in blue water and their
+   * warmth is a median of -5, nothing a colour cut can find, so it has to be a
+   * shape and the key has to do the cutting. Widening the lower ellipse to
+   * reach up there is what does not work — it is 168px wide because her
+   * umbrella is, and at that width it arrives over the bed of pebbles to her
+   * right, which is not keyed either and came out visibly lifted. So the gap
+   * gets its own ellipse, narrow enough to pass between her legs and those
+   * stones: 30px of clearance, which is what the frame offers.
    */
   const CHARACTER = [
     // The reflection: skirt, blouse, arm, head, and the umbrella under her.
     // Cut by the key underneath, so it only has to contain her.
     { cx: 1180, cy: 520, rx: 168, ry: 232 },
-    // Her legs and shoes, on the wet road above the far lip. Nothing is keyed
-    // up here, so this one carries its own cut: warm is her, cool is the road.
-    { cx: 1230, cy: 85, rx: 78, ry: 104, warmOnly: true },
+    // Her legs in the water, from the near edge down to the skirt: the span
+    // between the other two. Narrow, to clear the pebbles at x 1276.
+    { cx: 1200, cy: 235, rx: 75, ry: 90 },
+    // Her legs and shoes, on the wet road above the far lip, running off the
+    // top of the frame. Nothing is keyed up here, so this one carries its own
+    // cut: warm is her, cool is the road.
+    { cx: 1230, cy: 10, rx: 130, ry: 230, warmOnly: true },
   ];
 
   /**
