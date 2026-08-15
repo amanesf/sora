@@ -245,9 +245,17 @@ async function main() {
     // The reflection: skirt, blouse, arm, head, and the umbrella under her.
     // Cut by the key underneath, so it only has to contain her.
     { cx: 1180, cy: 520, rx: 168, ry: 232 },
-    // Her legs in the water, from the near edge down to the skirt: the span
-    // between the other two. Narrow, to clear the pebbles at x 1276.
-    { cx: 1200, cy: 235, rx: 75, ry: 90 },
+    // Her legs in the water: the span between the other two.
+    //
+    // Wider and taller than it looks like it needs to be, because the ellipse
+    // above it cuts by warmth and her legs stop being warm the moment they
+    // enter the water — a reflection in navy is a cool version of what it
+    // reflects. So the warm cut lets go exactly where the waterline is, and the
+    // grade measured 1.38 across the first rows under it against 1.90 on the
+    // legs above. This one has to have taken over by then, and it has no warm
+    // test of its own: below the waterline the key does the cutting, which is
+    // both cheaper and exactly right.
+    { cx: 1198, cy: 225, rx: 96, ry: 140 },
     // Her legs and shoes, on the wet road above the far lip, running off the
     // top of the frame. Nothing is keyed up here, so this one carries its own
     // cut: warm is her, cool is the road.
@@ -314,15 +322,25 @@ async function main() {
           if (inside <= 0) continue;
           const i = (y * FRAME_WIDTH + x) * 3;
           if (!e.warmOnly) {
-            keyed[y * FRAME_WIDTH + x] = Math.max(keyed[y * FRAME_WIDTH + x], inside);
+            // Combined as a *union*, not a maximum, and the difference is the
+            // seams. Each ellipse ramps from 0 at its own boundary, so where
+            // two of them overlap — which is exactly the join between her
+            // shins and her skirt, and between her calves and her shoes — both
+            // are partial and a maximum returns the larger partial value. The
+            // grade measured 1.48 and 1.63 across those two bands against 1.90
+            // everywhere else, which on a leg reads as a joint that is not
+            // there. Two coverages of 0.5 make one of 0.75 here, and full
+            // coverage anywhere either shape is certain.
+            const at = y * FRAME_WIDTH + x;
+            keyed[at] = 1 - (1 - keyed[at]) * (1 - inside);
             continue;
           }
           const t = Math.max(0, Math.min(1,
             (refData[i] - refData[i + 2] - CHARACTER_WARM[0])
             / (CHARACTER_WARM[1] - CHARACTER_WARM[0])));
-          warm[y * FRAME_WIDTH + x] = Math.max(
-            warm[y * FRAME_WIDTH + x], inside * t * t * (3 - 2 * t),
-          );
+          const at = y * FRAME_WIDTH + x;
+          const v = inside * t * t * (3 - 2 * t);
+          warm[at] = 1 - (1 - warm[at]) * (1 - v);
         }
       }
     }
@@ -331,7 +349,7 @@ async function main() {
     const chosen = new Float32Array(n);
     let px = 0;
     for (let i = 0; i < n; i++) {
-      const inside = Math.max(keyed[i], grown[i]);
+      const inside = 1 - (1 - keyed[i]) * (1 - grown[i]);
       if (inside <= 0) continue;
       // Only what is drawn: the more water a pixel is, the less it lifts.
       const water = Math.max(0, Math.min(1,

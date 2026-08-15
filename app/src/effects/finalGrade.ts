@@ -46,6 +46,25 @@ export const FinalGradeShader = {
     /** Where the contrast pivots. Mid grey in display space, which on this
      * picture sits between the wet road and the deep water. */
     uPivot: { value: 0.5 },
+    /**
+     * The split: what colour the highlights lean, and what colour the shadows
+     * lean, in that order.
+     *
+     * This picture has exactly one light in it and it is warm, and one large
+     * dark and it is water. Photographically that is the split-tone case: the
+     * lit half of the frame belongs to the sun and the unlit half belongs to
+     * the sky, and letting the two ends of the tonal range carry different
+     * colour is what separates them without touching their brightness.
+     *
+     * It is also the difference between "saturated" and "coloured". The
+     * saturation knob above scales everything away from grey, so it makes the
+     * gold more gold *and* the navy more navy along whatever hue each already
+     * has; this decides what those hues are. Small values — a couple of percent
+     * — because the two halves are already the right colours and this is a lean,
+     * not a tint.
+     */
+    uSplitWarm: { value: new THREE.Vector3(1.035, 1.005, 0.968) },
+    uSplitCool: { value: new THREE.Vector3(0.972, 0.994, 1.042) },
   },
   vertexShader: /* glsl */ `
     varying vec2 vUv;
@@ -59,6 +78,8 @@ export const FinalGradeShader = {
     uniform float uSaturation;
     uniform float uContrast;
     uniform float uPivot;
+    uniform vec3 uSplitWarm;
+    uniform vec3 uSplitCool;
     varying vec2 vUv;
 
     void main() {
@@ -73,6 +94,14 @@ export const FinalGradeShader = {
       // Saturation about luma, so hue and brightness stay put.
       float luma = dot(c, vec3(0.2126, 0.7152, 0.0722));
       c = clamp(mix(vec3(luma), c, uSaturation), 0.0, 1.0);
+
+      // The split, weighted by where each pixel sits in the range. Smoothstep
+      // rather than luma itself, so the middle of the picture — the mid-tone
+      // water, which is most of it — is left almost alone and only the two ends
+      // lean.
+      float lit = smoothstep(0.42, 0.92, luma);
+      float dark = 1.0 - smoothstep(0.06, 0.46, luma);
+      c = clamp(c * mix(vec3(1.0), uSplitWarm, lit) * mix(vec3(1.0), uSplitCool, dark), 0.0, 1.0);
 
       gl_FragColor = vec4(c, 1.0);
     }

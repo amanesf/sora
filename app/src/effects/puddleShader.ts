@@ -468,6 +468,21 @@ export const PuddleShader = {
         return;
       }
 
+      // The wet ground around the pool.
+      //
+      // A puddle does not end at its water. The stone for a hand's width around
+      // it is soaked, and soaked stone is darker and glossier than dry stone —
+      // it is why a real puddle sits in a soft dark halo instead of looking cut
+      // out of the road. The key ends at the waterline, so without this the
+      // app's water met bone-dry asphalt along a line, which was the most
+      // photographic-looking edge in the picture and the least true one.
+      //
+      // The interior field is the right shape for it and costs nothing extra:
+      // it is the key blurred over 26px (scripts/puddle.js), so outside the
+      // waterline it falls off over about the distance the ground stays wet.
+      // This is that band, on the side the key says is not water.
+      float wet = clamp(interior, 0.0, 1.0) * (1.0 - keyRaw);
+
       // How far down into the water this pixel is looking: 0 at the vanishing
       // line, 1 at the viewer's feet. This is the reflection's only coordinate,
       // and it is also what says how much detail the surface may carry here.
@@ -533,6 +548,20 @@ export const PuddleShader = {
         painted = pow(max(pow(max(painted, 0.0), vec3(2.2)) * uRainExposure, 0.0), vec3(1.0 / 2.2));
       }
       if (uHasAssets < 0.5) painted = uBedColour;
+      // Darker and a shade cooler, in linear light, so it reads as wet stone
+      // rather than as a shadow with an edge.
+      if (wet > 0.004) {
+        vec3 lin = pow(max(painted, 0.0), vec3(2.2));
+        lin *= mix(vec3(1.0), vec3(0.70, 0.74, 0.82), wet * 0.8);
+        painted = pow(max(lin, 0.0), vec3(1.0 / 2.2));
+      }
+      // Darker and a touch cooler, in linear light, so it reads as wet rather
+      // than as a shadow with a hard edge.
+      if (wet > 0.004) {
+        vec3 lin = pow(max(painted, 0.0), vec3(2.2));
+        lin *= mix(vec3(1.0), vec3(0.66, 0.70, 0.78), wet * 0.85);
+        painted = pow(max(lin, 0.0), vec3(1.0 / 2.2));
+      }
 
       if (key < 0.002) {
         gl_FragColor = vec4(painted, 1.0);
@@ -562,7 +591,18 @@ export const PuddleShader = {
       // *is* the ripples.
       vec3 n = normalize(vec3(-slope.x * 0.032, 1.0, -slope.y * 0.032));
       vec3 lightDir = normalize(vec3(-0.52, 0.62, -0.59));
-      float spec = pow(max(dot(n, lightDir), 0.0), 90.0);
+      float aligned = max(dot(n, lightDir), 0.0);
+      // Two lobes: the point itself, and a much broader glow around it.
+      //
+      // Everything in the post chain that would normally spread a highlight
+      // runs *before* the water (core/postFx.ts), so the glitter is the one
+      // bright thing in the frame with no bloom on it at all — pin-sharp
+      // pinpricks, which is what a specular looks like in a render and never
+      // what it looks like through an eye or a lens. Rather than bloom the
+      // finished frame, which would also spread the photograph, the highlight
+      // carries its own halo: the same dot product at a much lower exponent,
+      // which is a wide soft lobe around exactly where the sharp one is.
+      float spec = pow(aligned, 90.0) + 0.22 * pow(aligned, 9.0);
       // Broken up, so it reads as separate points of light rather than as a
       // varnish over the whole surface. The hash rides the ground plane, so the
       // grain gets finer with distance like everything else here.
@@ -594,11 +634,28 @@ export const PuddleShader = {
       float steep = smoothstep(1.10, 4.20, length(slope) * fine);
       vec3 horizonLight = intoWater(texture2D(tDiffuse, vec2(skyUv.x, uSkyV.x)).rgb, 0.0);
 
-      water = mix(water, horizonLight, steep * 0.16 * (0.4 + 0.6 * uWeave));
+      // The reflected content: sky where the water is keyed, photograph where
+      // something is painted on it.
+      vec3 colour = mix(painted, water, key);
 
-      water += uSunTint * glint * 1.35;
+      // ...and then the *surface*, over all of it.
+      //
+      // This is what puts the girl in the water rather than on top of it. Until
+      // now the crest lines and the glitter were mixed into 'water' and then
+      // masked by the key, so every painted reflection — her, the umbrella, the
+      // wires, the house — was the one thing in the pool with no surface in
+      // front of it: perfectly clean while the sky beside it rippled and
+      // sparkled. That reads exactly as what it was, a cut-out laid on the
+      // picture, and no amount of displacement fixes it, because displacement
+      // moves what is *under* the surface and this is about what is on it.
+      //
+      // Weighted by the interior rather than the key, because a specular
+      // highlight is a property of the water's surface and does not care what
+      // that surface happens to be reflecting.
+      colour = mix(colour, horizonLight, steep * 0.16 * (0.4 + 0.6 * uWeave) * interior);
+      colour += uSunTint * glint * 1.35 * interior;
 
-      gl_FragColor = vec4(mix(painted, water, key), 1.0);
+      gl_FragColor = vec4(colour, 1.0);
     }
   `,
 };

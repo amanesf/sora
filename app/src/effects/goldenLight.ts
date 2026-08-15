@@ -136,6 +136,14 @@ export const GoldenLightShader = {
      *   85% of them are not over the water; they are in the air over the road
      *   twice as many in the left half of the frame as in the right
      *
+     * The count is the constraint that is easiest to lose, and it was lost
+     * once: raising the brightness until the marks were unmistakable also
+     * raised how many of them there were, and 1.58% of the frame at full
+     * strength is not rain in sunlight, it is snow. Fewer and brighter is the
+     * ratio the reference actually has — the marks are sparse and each one is
+     * a highlight, so the fix for "I cannot see it" is the size of each mark,
+     * never the number of them.
+     *
      * Every one of those is a constraint here. The marks are *small* — two
      * pixels, not the comfortable eight a procedural sparkle wants to be — and
      * there are many of them, and they are barely tinted: what makes them read
@@ -160,7 +168,7 @@ export const GoldenLightShader = {
       for (int j = -1; j <= 1; j++) {
         vec2 c = cell + vec2(0.0, float(j));
         vec2 r = vec2(hash21(c + seed), hash21(c + seed + 7.3));
-        if (r.x > 0.24 + 0.70 * uRain) continue;
+        if (r.x > 0.15 + 0.42 * uRain) continue;
         vec2 centre = vec2(r.y, hash21(c + seed + 3.1)) * 0.8 + 0.1;
         vec2 d = (f - centre - vec2(0.0, float(j))) / size;
         // Stretched along the fall. The measured marks are very nearly round
@@ -222,12 +230,12 @@ export const GoldenLightShader = {
         float near = sparks(vUv, 9.0, 0.11, 0.26, 0.0);
         float mid = sparks(vUv, 26.0, 0.24, 0.15, 31.7);
         float dust = sparks(vUv, 48.0, 0.40, 0.10, 77.1);
-        float drops = near * 0.42 + mid * 0.66 + dust * 0.46;
+        float drops = near * 0.90 + mid * 1.20 + dust * 0.34;
 
         // Where the beam is, mostly. Not exclusively: some light is scattered
         // everywhere and the floor keeps a scatter of sparks across the whole
         // frame, rather than a hard edge where the shafts stop.
-        float inBeam = 0.42 + 1.5 * beam;
+        float inBeam = 0.62 + 1.5 * beam;
         lit += gold * drops * inBeam * amount * (0.35 + 0.65 * uRain);
       }
 
