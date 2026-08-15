@@ -144,9 +144,30 @@ export const FinalGradeShader = {
         // and everything below the white point still reaches a distinct value.
         // The cloud gets brighter *and* keeps its shape, which is the thing the
         // exposure was raised for in the first place.
+        // On luminance, with all three channels scaled by the one factor —
+        // not per channel, which is what made the bright cloud go muddy.
+        //
+        // Run channel by channel, a shoulder compresses each one by a different
+        // amount, and how different depends on how far apart they are. In the
+        // deep shadows nothing happens. In a *bright warm* pixel — a sunlit
+        // cloud face, red high and blue lower — red sits further into the bend
+        // than blue does, so red is pulled down harder and the colour walks
+        // toward neutral as it brightens. That is a desaturation that gets
+        // stronger the brighter the subject, applied to a frame whose brightest
+        // subject is the thing everyone is looking at, and it is why only some
+        // of the cloud looked dirty: only the parts far enough into the
+        // shoulder for the channels to separate.
+        //
+        // A tone curve is supposed to answer "how much light is here", which is
+        // one question with one answer. So it runs on luminance and returns a
+        // single factor that all three channels are scaled by — and scaling a
+        // colour leaves its ratios, and therefore its hue and its saturation,
+        // exactly where they were. Same argument as CHARACTER_CONTRAST in
+        // scripts/puddle.js, which had to learn it too.
         float w = uWhite;
-        lin = lin * (1.0 + lin / (w * w)) / (1.0 + lin);
-        c = pow(max(lin, 0.0), vec3(1.0 / 2.2));
+        float lum = max(dot(lin, vec3(0.2126, 0.7152, 0.0722)), 1e-5);
+        float toned = lum * (1.0 + lum / (w * w)) / (1.0 + lum);
+        c = pow(max(lin * (toned / lum), 0.0), vec3(1.0 / 2.2));
       }
 
       // Contrast, about the pivot. Kept in display space because that is where

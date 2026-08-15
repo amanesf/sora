@@ -62,6 +62,16 @@ interface TierSpec {
   /** Cluster radius, roughly, in km — how far past the frame edge a cluster has
    * to travel before it is fully gone. */
   margin: number;
+  /**
+   * How much bigger than the fitted arrangement this tier's clusters are, and
+   * the *only* correct way to ask for that — see the note above TIERS.
+   *
+   * Read by buildSlot, which applies it to three things at once: the radius up
+   * by S, the lobe count up by S squared, and the grain caps down by S. Anything
+   * less than all three is not a bigger cloud, it is a differently-built one.
+   * Defaults to 1.
+   */
+  radiusScale?: number;
   /** Coverage this tier contributes at a given weather value.
    * A clear day has scattered fair-weather cumulus and no towers at all; a
    * pre-rain sky is solid low deck. */
@@ -138,38 +148,44 @@ function convectiveShape(rand: () => number, weather: number, sheared: boolean):
  * distribution that is already measured rather than from a fresh guess.
  */
 /**
- * 1.0 — and the note is here because 1.5 was tried and made the cloud wrong.
+ * Making a cloud bigger, properly — which is three changes, not one.
  *
- * "The clouds are not big enough" is a true observation with two available
- * answers, and this file offers both: make each mass wider, or put more of them
- * in the sky. Scaling the radius looks like the direct one and it is not,
- * because of what a radius means downstream. scene/clouds.ts sizes every lobe
- * as a fraction of its level's radius — `radius * 0.98 * ...`, capped at
- * `radius * grainCap` — so a cluster 1.5x wider is built from the same number
- * of lobes, each 1.5x bigger. The mass grows and its *grain* grows with it, and
- * the grain is the one thing here that was measured rather than chosen: the
- * reference's silhouette bumps run about 35-41px, and those constants were
- * fitted against them. At 1.5 the cloud came out coarse and blobby — bigger,
- * and no longer a cumulus.
+ * "The clouds are not big enough" was answered wrongly twice, and both failures
+ * are worth keeping because each one names a thing a radius secretly controls.
  *
- * Doing it properly means scaling the radius up, the grain caps down by the
- * same factor and the lobe count up by its square to hold the density, which is
- * 2.25x the geometry in a scene whose tower clusters are already ~1150 lobes
- * each. That is a real change with a real cost and it should be made
- * deliberately, not as a side effect of a size complaint.
+ * **Radius alone (1.5x) made the grain coarse.** scene/clouds.ts sizes every
+ * lobe as a fraction of its level's radius — `radius * 0.98 * ...`, capped at
+ * `radius * grainCap` — so a cluster 1.5x wider is built from the *same number*
+ * of lobes, each 1.5x bigger. The mass grew and its grain grew with it, and the
+ * grain is the one measured thing here: the reference's silhouette bumps run
+ * 35-41px and the caps were fitted against them. The result was bigger and no
+ * longer a cumulus.
  *
- * The other answer was tried too — the tier counts up about half again — and it
- * is also not it. More clusters at these radii do not read as more sky, they
- * read as clusters packed close enough to intersect, and two overlapping
- * silhouettes meet at a point: the cloud came out spiky. Coverage is already
- * near 1.0 for the deck tiers at this weather, which is the same thing the
- * `overcast` note below says — past that point, adding slots stops adding sky
- * and starts adding collisions.
+ * **Count alone (+50% slots) made the silhouettes spiky.** Coverage is already
+ * near 1.0 for the deck tiers at this weather, so extra slots did not add sky,
+ * they added clusters packed close enough to intersect — and two overlapping
+ * round silhouettes meet at a point.
  *
- * So both counts and radii stay where they were fitted, and "the clouds are too
- * small" is left open rather than answered wrongly a third time.
+ * So the size is a similarity transform of the *whole construction*, and all
+ * three parts of it move together:
+ *
+ *   radius        x S      the mass gets bigger
+ *   grain caps    / S      so a lobe stays the size it was fitted at
+ *   lobes/level   x S^2    so the density of lobes per unit area is unchanged
+ *
+ * The square is the part that is easy to miss and the part that does the work:
+ * lobes cover area, area goes as the square of the radius, and holding the
+ * count fixed while widening the mass thins it into lace. With all three, what
+ * comes out is the same cloud photographed from closer — same texture, same
+ * outline statistics, more of the frame.
+ *
+ * It costs what it says it costs. The tower tier goes from 15 lobes a level to
+ * 34, over 22 levels, which is ~750 lobes a cluster against ~330. That is the
+ * price of the request and it is why this is a per-tier field rather than a
+ * global: the towers are the subject and pay it, the two deck tiers are 48
+ * slots of backdrop and do not.
  */
-const TIER_RADIUS_SCALE = 1.0;
+const TOWER_SCALE = 1.5;
 
 const TIERS: TierSpec[] = [
   {
@@ -185,12 +201,32 @@ const TIERS: TierSpec[] = [
     levels: 22,
     puffsPerLevel: 15,
     margin: 6,
+    // The tier that pays for the size, because it is the one the picture is
+    // about. 1.5 puts a mature tower at 3.0-4.05km across against 8.4-10.4km
+    // tall — still better than two to one in height, so it is a tower and not a
+    // heap, and now wide enough to be the subject of a puddle that images a
+    // magnified band of sky.
+    radiusScale: TOWER_SCALE,
     // The headline cloud, and what sets where the slider's landmarks fall:
     // towers come in over 0.45-0.72 and are at full strength by ~0.7. Above
     // 0.85 they give way again — a cumulonimbus does not stand out against a
     // raining sky, by then it has merged into the deck.
+    // Brought down from smoothstep(w, 0.45, 0.72), and this is the difference
+    // between a sky that *can* make a 入道雲 and one that has one.
+    //
+    // CLOUD sits at 0.56 — deliberately, it is what the reference's water holds
+    // — and against the old edges that landed the tower coverage at 0.29. Over
+    // four stratified slots that is one tower, somewhere in a 78km scene, seen
+    // through a puddle that images a band a few degrees tall. Most openings had
+    // no tower in the water at all, which is the real reason the sky read as
+    // "small cloud" whatever the radii said.
+    //
+    // 0.42-0.66 puts it at 0.73, so three of the four slots carry a tower and
+    // one is always somewhere worth looking. The far edge comes down with it so
+    // the top of the slider still gives them up to the deck — a cumulonimbus
+    // does not stand out against a raining sky, by then it has merged into it.
     coverageAt: (w) =>
-      THREE.MathUtils.smoothstep(w, 0.45, 0.72) * (1 - 0.55 * THREE.MathUtils.smoothstep(w, 0.85, 1)),
+      THREE.MathUtils.smoothstep(w, 0.42, 0.66) * (1 - 0.55 * THREE.MathUtils.smoothstep(w, 0.85, 1)),
     shapeFor: (rand, w) => convectiveShape(rand, w, true),
   },
   {
@@ -665,8 +701,9 @@ export function createCloudField(
     // This is what closes the sky: coverage 1.0 with 5km masses still leaves
     // blue between them, and no number of extra slots fixes that as reliably as
     // making each one bigger does.
+    const sizeScale = tier.radiusScale ?? 1;
     const radius = (tier.radLo + rand() * (tier.radHi - tier.radLo)) *
-      (isDeck ? THREE.MathUtils.lerp(1, 1.8, overcast) : 1) * TIER_RADIUS_SCALE;
+      (isDeck ? THREE.MathUtils.lerp(1, 1.8, overcast) : 1) * sizeScale;
     // A pre-rain sky is lower and flatter; a clear one is shallow fair-weather
     // cumulus. Both come out of the same tier by moving base and top, not by
     // swapping in different-looking clouds.
@@ -710,9 +747,13 @@ export function createCloudField(
     // also how the underside gets dark: a thicker, better-packed deck shadows
     // itself, which is the Beer-Lambert route to a grey sky rather than
     // painting one (image-sky-plan.md §3).
+    // ...and the square of the size scale on top, which is what keeps a bigger
+    // cloud from thinning into lace: lobes cover area, and area goes as the
+    // square of the radius.
     const puffsPerLevel = Math.max(
       3,
-      Math.round(tier.puffsPerLevel * (0.82 + rand() * 0.4) * (isDeck ? 1 + 0.9 * overcast : 1)),
+      Math.round(tier.puffsPerLevel * (0.82 + rand() * 0.4) * (isDeck ? 1 + 0.9 * overcast : 1)
+        * sizeScale * sizeScale),
     );
 
     // The profile constants are the reference fit, but jittered per cluster.
@@ -758,6 +799,20 @@ export function createCloudField(
               return (t: number) => radius * THREE.MathUtils.lerp(1.0, topFrac, Math.pow(t, falloff));
             })();
 
+    // The grain caps come down by the same factor the radius went up, so a lobe
+    // keeps the size it was fitted at. They are fractions *of the radius*, which
+    // is precisely why they have to move when it does.
+    const shape = tier.shapeFor?.(rand, weather) ?? defaultClusterShape();
+    if (sizeScale !== 1) {
+      shape.grainCap /= sizeScale;
+      shape.grainCapCore /= sizeScale;
+      // ...and the size hierarchy is stretched over the longer list of lobes,
+      // which is the fourth thing a radius secretly controls. See
+      // ClusterShape.rankSpread: without it the extra lobes all land on the
+      // minimum size and the mass comes out as popcorn.
+      shape.rankSpread = sizeScale * sizeScale;
+    }
+
     const handle = createCloudCluster(
       slot.id * 31.7 + generation * 5.9,
       new THREE.Vector2(0, slot.z),
@@ -768,7 +823,7 @@ export function createCloudField(
       puffsPerLevel,
       materials,
       lightDir,
-      tier.shapeFor?.(rand, weather) ?? defaultClusterShape(),
+      shape,
     );
     if (tier.castsShadow === false) {
       handle.group.traverse((o) => o.layers.set(NO_SHADOW_CAST_LAYER));

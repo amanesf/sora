@@ -70,6 +70,27 @@ export interface ClusterShape {
    * built from big lobes that overlap into solid mass while the outside stays
    * finely scalloped. The gap between the two is the size hierarchy. */
   grainCapCore: number;
+  /**
+   * How far the per-level size hierarchy is stretched, when a tier is built
+   * from more lobes than the fitted count — see scene/cloudField.ts's
+   * radiusScale. 1 for every tier that is not scaled.
+   *
+   * `rankSize` below is 0.78^i over the level's lobes sorted outward, which is
+   * a geometric size hierarchy: a few big lobes in the middle, smaller ones
+   * further out. Written against the raw index it silently assumes the count it
+   * was fitted at. Hand it 2.25x the lobes — which is exactly what a
+   * similarity-scaled cluster needs, since lobes cover area — and the tail runs
+   * to 0.78^33, six thousandths, so two thirds of the new lobes land on the
+   * `radius * 0.08` floor instead. Every one of them then comes out the *same
+   * size*, which is the popcorn failure this cap's own note describes, arriving
+   * through the count rather than through the cap.
+   *
+   * Dividing the exponent by the count multiplier is the whole fix: the
+   * hierarchy keeps its shape and its end points and is simply sampled more
+   * finely, so a bigger cloud is the same cloud with more lobes in it rather
+   * than the same few lobes plus a field of identical crumbs.
+   */
+  rankSpread: number;
   /** Mean number of satellite lobes riding each main puff. */
   satellites: number;
   /** Convective boil: how much of its own size a lobe swells and shrinks by
@@ -86,6 +107,7 @@ export function defaultClusterShape(): ClusterShape {
     puffStretch: new THREE.Vector3(1, 1, 1),
     grainCap: 0.25,
     grainCapCore: 0.55,
+    rankSpread: 1,
     satellites: 2.3,
     boil: 0.1,
     boilPeriod: 210,
@@ -209,7 +231,7 @@ function buildPuffCluster(
 
     centers.forEach((c, i) => {
       const dist = Math.sqrt(c.x * c.x + c.z * c.z) / Math.max(radius, 1e-4);
-      const rankSize = Math.pow(0.78, i);
+      const rankSize = Math.pow(0.78, i / Math.max(shape.rankSpread, 1e-3));
       const bulk = 1 - dist * 0.55;
       // Wide size variety ("サイズもバラバラに") instead of the previous
       // narrow 0.8-2.2 band: mostly small/medium grains with occasional
