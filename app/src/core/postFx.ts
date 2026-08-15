@@ -10,17 +10,19 @@ import { MacroContrastPass } from '../effects/macroContrast';
 import { PuddleShader } from '../effects/puddleShader';
 import { RainShader } from '../effects/rainShader';
 import { NearRainShader } from '../effects/nearRain';
+import { GoldenLightShader } from '../effects/goldenLight';
 import { relightForDay, type Daylight } from './daylight';
 import { HorizonHazeShader } from '../effects/horizonHaze';
 import { FRAME_WIDTH, FRAME_HEIGHT, type FrameRect } from './frame';
 import {
-  CAMERA_HORIZON_FRACTION,
   GROUND_SCALE,
   HAZE_TOP_ROW,
   HORIZON_ROW,
   PUDDLE_MASK,
   PUDDLE_REF,
   WATER_HORIZON_ROW,
+  WATER_SKY_V0,
+  WATER_SKY_V1,
 } from '../scene/puddle';
 import type { Ripples } from '../scene/ripples';
 
@@ -60,7 +62,9 @@ export interface PostFx {
    * — see effects/puddleShader.ts's uTime), how hard the wind is working the
    * surface, and how much light the slopes are allowed to throw.
    */
-  setWater: (water: { time: number; wind: number; weave: number }) => void;
+  setWater: (water: {
+    time: number; wind: number; weave: number; drizzle: number; palette: number;
+  }) => void;
   /** The pressed rings (scene/ripples.ts). Handed over once at startup; the
    * pass reads the same Vector4s the ripple table writes into. */
   setRipples: (ripples: Ripples) => void;
@@ -217,6 +221,13 @@ export function createPostFx(renderer: THREE.WebGLRenderer, scene: THREE.Scene, 
   nearRainPass.enabled = false;
   composer.addPass(nearRainPass);
 
+  // And the sun, last of all: the shafts it throws across the whole frame and
+  // the drops it lights on the way (effects/goldenLight.ts). After the near
+  // rain because it lights those drops too — a beam is not behind the weather,
+  // it is what the weather is being seen in.
+  const goldenPass = new ShaderPass(GoldenLightShader);
+  composer.addPass(goldenPass);
+
   const setSize = (width: number, height: number) => {
     composer.setSize(width, height);
     kuwaharaPass.setSize(width, height);
@@ -226,6 +237,7 @@ export function createPostFx(renderer: THREE.WebGLRenderer, scene: THREE.Scene, 
     horizonPass.uniforms.uTexel.value.set(1 / width, 1 / height);
     rainPass.uniforms.uAspect.value = width / height;
     nearRainPass.uniforms.uAspect.value = width / height;
+    goldenPass.uniforms.uAspect.value = width / height;
     // The drops are specified in pixels, so they have to be told what a pixel
     // is — see effects/rainShader.ts's uFrameSize.
     (rainPass.uniforms.uFrameSize.value as THREE.Vector2).set(width, height);
@@ -332,6 +344,10 @@ export function createPostFx(renderer: THREE.WebGLRenderer, scene: THREE.Scene, 
     // rather than staying white over an evening sky.
     const sun = day.sunTint;
     puddlePass.uniforms.uSunTint.value.set(sun.r, sun.g, sun.b);
+    // The beam is made of the same light, and only exists while it is low
+    // enough to rake (effects/goldenLight.ts's uDusk).
+    goldenPass.uniforms.uSunTint.value.set(sun.r, sun.g, sun.b);
+    goldenPass.uniforms.uDusk.value = day.dusk;
 
     hazeDay = day;
     // The band that fills the bottom of the sky was a fixed pale midday blue
@@ -371,10 +387,7 @@ export function createPostFx(renderer: THREE.WebGLRenderer, scene: THREE.Scene, 
     nearRainPass.uniforms.uRain.value = amount;
     nearRainPass.uniforms.uRainTime.value = rainTime;
     nearRainPass.enabled = amount > 0.001;
-    // The same slider rings the water: rain on a puddle is rings, and they are
-    // the same term as a footfall's with a shorter life
-    // (effects/puddleShader.ts's rainRings).
-    puddlePass.uniforms.uRain.value = amount;
+    goldenPass.uniforms.uTime.value = rainTime;
   };
 
   // The last rect, so the water and the haze band can be re-derived from it
@@ -396,7 +409,14 @@ export function createPostFx(renderer: THREE.WebGLRenderer, scene: THREE.Scene, 
     // end is read from. Both are frame rows put through the same crop, so a
     // phone that loses columns off the sides still images the same hemisphere.
     puddlePass.uniforms.uHorizonV.value = rowToV(WATER_HORIZON_ROW);
-    puddlePass.uniforms.uSkyHorizonV.value = 1 - CAMERA_HORIZON_FRACTION;
+    // The band of the render the water reads from (scene/puddle.ts).
+    puddlePass.uniforms.uSkyV.value.set(WATER_SKY_V0, WATER_SKY_V1);
+    // The reflection's magnification, which must be the same on both axes —
+    // see effects/puddleShader.ts's uSkyUScale. Derived here rather than
+    // written down, so it cannot fall out of step with the band above or with
+    // where the water's vanishing line ends up after a crop.
+    puddlePass.uniforms.uSkyUScale.value =
+      rowToV(WATER_HORIZON_ROW) / Math.max(WATER_SKY_V1 - WATER_SKY_V0, 1e-3);
 
     const horizonV = rowToV(HORIZON_ROW);
     horizonPass.uniforms.uHazeV.value.set(horizonV, rowToV(HAZE_TOP_ROW));
@@ -411,10 +431,18 @@ export function createPostFx(renderer: THREE.WebGLRenderer, scene: THREE.Scene, 
     applyFrame();
   };
 
-  const setWater = (water: { time: number; wind: number; weave: number }) => {
+  const setWater = (water: {
+    time: number; wind: number; weave: number; drizzle: number; palette: number;
+  }) => {
+    puddlePass.uniforms.uPalette.value = water.palette;
     puddlePass.uniforms.uTime.value = water.time;
     puddlePass.uniforms.uWind.value = water.wind;
     puddlePass.uniforms.uWeave.value = water.weave;
+    // The drops at the surface, which are deliberately not the sky's rain —
+    // see scene/settings.ts's DRIZZLE. They ring the water, and they are what
+    // the low sun is lighting on the way down.
+    puddlePass.uniforms.uRain.value = water.drizzle;
+    goldenPass.uniforms.uRain.value = water.drizzle;
   };
 
   const setRipples = (ripples: Ripples) => {

@@ -51,10 +51,14 @@ body {
   touch-action: none;
 }
 
-/* Portrait phone, top to bottom: title, picture, console. The console sits
-   directly under the picture rather than being pushed to the foot of the
-   screen — everything the eye needs is in the upper two thirds, and the space
-   below it is the graded darkness the canvas paints, not a gap. */
+/* Portrait phone, top to bottom: title, picture, text.
+   
+   There is no console. The window app had six rows of it — cloud, rain, time,
+   speed, frame rate, scene — and every one of them was a way of asking for a
+   different picture than the one it opened on. This app has one picture to
+   make and one control that matters, which is the water itself: you press it.
+   Sliders beside that would only offer to make the reference worse. What they
+   set is fixed in main.ts instead, at the values the reference is. */
 body {
   display: flex;
   flex-direction: column;
@@ -65,7 +69,6 @@ body {
    (core/compose.ts). */
 .title,
 .stage,
-.console,
 .story {
   position: relative;
   z-index: 1;
@@ -239,230 +242,6 @@ body {
   background: linear-gradient(to bottom, transparent, rgba(4, 6, 11, 0.85));
 }
 
-/* --- Console ----------------------------------------------------------- */
-
-/* Six rows now (cloud, rain, time, speed, fps, scene), so the console is the
-   one part of this page that grows every time something is added to it — and it
-   sits between the picture and the text, which are the two things worth looking
-   at. The spacing below is therefore tighter than a form would normally be:
-   most of what separates two rows is not the gap but the empty height of the
-   row itself, since a slider's track is 2px inside a box sized for a thumb. */
-.console {
-  flex: none;
-  padding: 12px max(18px, env(safe-area-inset-left)) 0 max(18px, env(safe-area-inset-right));
-  display: flex;
-  flex-direction: column;
-  gap: 5px;
-}
-
-/* A thin lit line rather than a chunky slider — the same visual family as the
-   title's glow, so the console reads as one instrument. Four of them now
-   (cloud, rain, time, speed) plus the frame rate row below, so a row has to
-   stay quiet: a fixed-width
-   label column and a fixed-width readout column keep the tracks aligned with
-   each other, which is most of what makes a stack of sliders look built rather
-   than assembled. */
-.slider {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-}
-
-.slider__label {
-  flex: none;
-  width: 3.6em;
-  font: 500 9px/1 system-ui, sans-serif;
-  letter-spacing: 0.22em;
-  color: var(--text-dim);
-}
-
-.slider__value {
-  flex: none;
-  min-width: 3.9em;
-  text-align: right;
-  font: 600 15px/1 ui-monospace, 'SF Mono', 'Roboto Mono', monospace;
-  font-variant-numeric: tabular-nums;
-  color: var(--text);
-}
-
-.slider__value i {
-  font-style: normal;
-  font-size: 0.7em;
-  margin-left: 0.15em;
-  color: var(--text-dim);
-}
-
-.slider__input {
-  flex: 1;
-  /* Touch target, not the visual height of the track — which is 2px. Trimmed
-     from 34, which put 16px of nothing above and below every track; a slider
-     can be grabbed anywhere along its length, so it needs less height than a
-     button does to stay comfortable. */
-  height: 28px;
-  /* Chrome's UA stylesheet puts `margin: 2px` on a range input, which quietly
-     made every slider row 32px rather than the 28 asked for — four rows, so
-     16px of the console's height was a default nobody chose. */
-  margin: 0;
-  background: transparent;
-  appearance: none;
-  -webkit-appearance: none;
-  /* Set from JS on every input so the filled part of the track tracks the
-     thumb — a range input cannot express this in CSS alone. */
-  --fill: 0%;
-}
-
-.slider__input::-webkit-slider-runnable-track {
-  height: 2px;
-  border-radius: 2px;
-  background: linear-gradient(
-    to right,
-    var(--accent) 0%,
-    var(--accent) var(--fill),
-    rgba(255, 255, 255, 0.16) var(--fill),
-    rgba(255, 255, 255, 0.16) 100%
-  );
-}
-
-.slider__input::-webkit-slider-thumb {
-  appearance: none;
-  -webkit-appearance: none;
-  width: 14px;
-  height: 14px;
-  margin-top: -6px;
-  border-radius: 50%;
-  background: #fff;
-  box-shadow: 0 0 0 5px rgba(124, 198, 240, 0.18), 0 0 14px rgba(124, 198, 240, 0.8);
-}
-
-.slider__input::-moz-range-track {
-  height: 2px;
-  border-radius: 2px;
-  background: rgba(255, 255, 255, 0.16);
-}
-
-.slider__input::-moz-range-progress {
-  height: 2px;
-  border-radius: 2px;
-  background: var(--accent);
-}
-
-.slider__input::-moz-range-thumb {
-  width: 14px;
-  height: 14px;
-  border: 0;
-  border-radius: 50%;
-  background: #fff;
-  box-shadow: 0 0 0 5px rgba(124, 198, 240, 0.18), 0 0 14px rgba(124, 198, 240, 0.8);
-}
-
-/* The frame rate pair (ui/controls.ts). It sits in a `.slider` row so it keeps
-   the console's three-column rhythm, and it is pushed to the right so the two
-   numbers land in the same column as the sliders' readouts — the console then
-   still reads as one instrument with one right edge, rather than as a stack of
-   sliders with a widget bolted underneath. */
-.segment {
-  flex: 1;
-  display: flex;
-  justify-content: flex-end;
-  gap: 6px;
-}
-
-.segment__button {
-  min-width: 3.4em;
-  padding: 6px 0;
-  border: 1px solid rgba(255, 255, 255, 0.16);
-  border-radius: 999px;
-  background: transparent;
-  font: 600 13px/1 ui-monospace, 'SF Mono', 'Roboto Mono', monospace;
-  font-variant-numeric: tabular-nums;
-  color: var(--text-dim);
-  cursor: pointer;
-  /* Kept taller than the slider rows. A button has to be hit, not swept, so it
-     is the one control here that cannot give up much height. */
-  height: 30px;
-  transition: color 120ms ease, border-color 120ms ease, box-shadow 120ms ease;
-}
-
-/* Selected. The same lit-line family as the slider thumb: an accent edge and a
-   soft glow rather than a filled chip, so the console stays drawn in light. */
-.segment__button[aria-pressed='true'] {
-  border-color: var(--accent);
-  color: var(--text);
-  box-shadow: 0 0 0 3px rgba(124, 198, 240, 0.14), 0 0 14px rgba(124, 198, 240, 0.45);
-}
-
-/* --- Settings panel ---------------------------------------------------- */
-
-/* The fold that holds the sliders and the frame rate (ui/controls.ts).
- *
- * A <details> with the disclosure triangle taken off and a chevron of our own
- * put on, because the UA triangle is a black glyph in a console drawn entirely
- * in thin lit lines. Everything else about the element is left alone — it opens,
- * closes, takes focus and answers the keyboard without a line of script.
- */
-.panel {
-  border-top: 1px solid rgba(150, 208, 244, 0.12);
-  margin-top: 3px;
-}
-
-.panel__summary {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  height: 30px;
-  cursor: pointer;
-  list-style: none;
-  /* The row is a control, and a control that selects its own label when
-     double-tapped feels broken. */
-  user-select: none;
-  -webkit-user-select: none;
-  -webkit-tap-highlight-color: transparent;
-}
-
-/* Both engines' ways of spelling "no disclosure triangle". */
-.panel__summary::-webkit-details-marker {
-  display: none;
-}
-
-.panel__summary::marker {
-  content: '';
-}
-
-.panel__label {
-  /* The same instrument type as a slider's label, so the fold reads as one more
-     row of the console rather than as a header above it. */
-  font: 500 9px/1 system-ui, sans-serif;
-  letter-spacing: 0.22em;
-  color: var(--text-dim);
-}
-
-/* A chevron drawn from two borders: no glyph, no asset, and it inherits the
-   colour of the line family around it. */
-.panel__chevron {
-  width: 6px;
-  height: 6px;
-  border-right: 1px solid rgba(150, 208, 244, 0.55);
-  border-bottom: 1px solid rgba(150, 208, 244, 0.55);
-  transform: rotate(45deg) translate(-2px, -2px);
-  transition: transform 160ms ease;
-}
-
-.panel[open] .panel__chevron {
-  transform: rotate(-135deg) translate(-2px, -2px);
-}
-
-.panel__summary:hover .panel__label,
-.panel__summary:focus-visible .panel__label {
-  color: var(--text);
-}
-
-.panel__body {
-  display: flex;
-  flex-direction: column;
-  gap: 5px;
-  padding-bottom: 6px;
-}
-
 /* --- Story ------------------------------------------------------------- */
 
 /* The text at the foot of the page.
@@ -577,14 +356,12 @@ body {
    transition still never paints a half-built page. */
 .is-booting .title,
 .is-booting .stage,
-.is-booting .console,
-.is-booting .story {
+.is-booting .is-booting .story {
   opacity: 0;
 }
 
 .title,
 .stage,
-.console,
 .story {
   transition: opacity 520ms ease;
 }
@@ -629,8 +406,7 @@ body {
  * core/compose.ts, which keeps the measured frame byte-exact.
  * `?fit=page` captures the real layout. */
 .fit-frame .title,
-.fit-frame .console,
-.fit-frame .story,
+.fit-frame .fit-frame .story,
 .fit-frame .boot {
   display: none;
 }

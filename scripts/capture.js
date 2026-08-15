@@ -19,7 +19,7 @@ const T = process.argv[3] || '0';
 // assumes. CAPTURE_W/CAPTURE_H override it to check other viewport shapes —
 // notably the Pixel 10 Pro's 998x448 landscape, where core/frame.ts crops the
 // frame instead of stretching it.
-const WIDTH = Number(process.env.CAPTURE_W || 1408);
+const WIDTH = Number(process.env.CAPTURE_W || 1376);
 const HEIGHT = Number(process.env.CAPTURE_H || 768);
 const PORT = 5199;
 

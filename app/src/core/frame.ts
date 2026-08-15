@@ -6,7 +6,7 @@ import * as THREE from 'three';
  * the camera solved in `core/camera.ts`, and the plate's pixels. The window the
  * app renders into is the `.stage` band of the page, and the target device is
  * now a Pixel 10 Pro held *upright*: the picture is a landscape band across the
- * upper part of a portrait page, sized in CSS to the plate's own 1.833 aspect
+ * upper part of a portrait page, sized in CSS to the reference's own 1.792 aspect
  * (bled 10% off the left edge and 5% off the right), so on the phone this
  * function is asked for the whole frame and crops nothing. The crop rules below
  * are what keeps every other shape honest — a desktop window, or a screen short
@@ -16,13 +16,13 @@ import * as THREE from 'three';
  * (Previously the canvas was the whole window on a phone held sideways, a
  * 998x448 viewport whose 2.23 aspect always cropped.)
  *
- * So the plate is never stretched. A sub-rectangle of the 1408x768 frame is
+ * So the plate is never stretched. A sub-rectangle of the 1376x768 frame is
  * chosen to match the viewport's aspect, and *both* the 3D camera (via
  * setViewOffset, which renders exactly a sub-rect of a larger frame) and the
  * plate quad (via UVs) are given that same rectangle. Stretching either one
  * independently would slide the painted window frames off the rendered sky.
  */
-export const FRAME_WIDTH = 1408;
+export const FRAME_WIDTH = 1376;
 export const FRAME_HEIGHT = 768;
 const FRAME_ASPECT = FRAME_WIDTH / FRAME_HEIGHT;
 
@@ -34,7 +34,7 @@ const FRAME_ASPECT = FRAME_WIDTH / FRAME_HEIGHT;
 const TOP_CROP_SHARE = 0.3;
 
 export interface FrameRect {
-  /** Sub-rect of the 1408x768 frame that is visible, in frame pixels. */
+  /** Sub-rect of the 1376x768 frame that is visible, in frame pixels. */
   x: number;
   y: number;
   width: number;

@@ -6,7 +6,6 @@ import { visibleRect, applyToCamera } from './core/frame';
 import { createSky, updateSky } from './scene/sky';
 import { createCloudMaterials } from './scene/clouds';
 import { createCloudField, NO_SHADOW_CAST_LAYER } from './scene/cloudField';
-import { createControls } from './ui/controls';
 import {
   CLOCK_END_HOUR,
   CLOCK_START_HOUR,
@@ -17,7 +16,8 @@ import { createPostFx } from './core/postFx';
 import { createCloudShadow } from './scene/cloudShadow';
 import { createCloudLayer } from './scene/cloudLayer';
 import { createCompose } from './core/compose';
-import { CAMERA_HORIZON_FRACTION } from './scene/puddle';
+import { CAMERA_HORIZON_FRACTION, MIRROR_SUN_AZIMUTH } from './scene/puddle';
+import { CLOUD, DRIZZLE, FRAME_RATE, HOUR, RAIN, SPEED, WATER, WEAVE } from './scene/settings';
 import { createRipples } from './scene/ripples';
 
 // `?fit=frame` gives the whole viewport to the picture and hides the title and
@@ -176,20 +176,30 @@ const numeric = (key: string): number | undefined => {
   const value = Number(raw);
   return Number.isFinite(value) ? value : undefined;
 };
-const initial = {
-  cloud: numeric('cloud'),
-  rain: numeric('rain'),
-  hour: numeric('hour'),
-  speed: numeric('speed'),
-  water: numeric('water'),
-  weave: numeric('weave'),
-  // `?fps=30` / `?fps=60`. Unlike the others this one is also remembered
-  // between visits — see ui/controls.ts — and the URL wins over what was
-  // remembered, so a link can still name the frame rate it wants.
-  fps: numeric('fps'),
+/**
+ * The picture's settings: scene/settings.ts, unless the address bar says
+ * otherwise.
+ *
+ * There is no console (scene/settings.ts explains why), so these are constants
+ * for every visitor. The URL still wins, and only the capture harness uses
+ * that — a measurement asks for a named frame the same way it asks for a named
+ * second with `?t=`.
+ */
+const settings = {
+  cloud: numeric('cloud') ?? CLOUD,
+  rain: numeric('rain') ?? RAIN,
+  hour: numeric('hour') ?? HOUR,
+  speed: numeric('speed') ?? SPEED,
+  water: numeric('water') ?? WATER,
+  weave: numeric('weave') ?? WEAVE,
+  drizzle: numeric('drizzle') ?? DRIZZLE,
+  // `?palette=0` bypasses the water's colour transfer — see
+  // effects/puddleShader.ts's uPalette. A measurement switch, not a setting.
+  palette: numeric('palette') ?? 1,
+  fps: numeric('fps') ?? FRAME_RATE,
 };
 
-const cloudField = createCloudField(scene, materials, CLOUD_LIGHT_DIR, initial.cloud ?? 0.62);
+const cloudField = createCloudField(scene, materials, CLOUD_LIGHT_DIR, settings.cloud);
 
 // The high tiers (cirrus, altocumulus) live on their own layer so the shadow
 // camera — which stays on layer 0 — never sees them. The view camera has to be
@@ -222,6 +232,7 @@ if (cloudLayer) compose.setClouds(cloudLayer.texture);
 // through the same pitch.
 setCameraHorizon(camera, CAMERA_HORIZON_FRACTION);
 
+
 /**
  * How many rendered frames it takes before the picture is the picture.
  *
@@ -242,8 +253,6 @@ function drawnFrames(count: number): Promise<void> {
     requestAnimationFrame(tick);
   });
 }
-
-const controls = createControls(initial);
 
 /**
  * The rings, and the two verbs.
@@ -398,7 +407,7 @@ function applyRainVisibility(rain: number): void {
 }
 
 function applyControls(rainTime: number): void {
-  const rain = controls.rainAmount();
+  const rain = settings.rain;
   if (rain !== appliedRain) {
     appliedRain = rain;
     applyRainVisibility(rain);
@@ -408,7 +417,7 @@ function applyControls(rainTime: number): void {
   // more. Rounded to the slider's own step so that dragging the rain slider does
   // not rebuild the entire cloud field on every intermediate value.
   const cloud = Math.round(
-    Math.max(controls.cloudAmount(), rainCloudFloor(rain)) * 100,
+    Math.max(settings.cloud, rainCloudFloor(rain)) * 100,
   ) / 100;
   if (cloud !== appliedCloud) {
     appliedCloud = cloud;
@@ -419,11 +428,16 @@ function applyControls(rainTime: number): void {
     materials.core.uniforms.uOvercast.value = THREE.MathUtils.smoothstep(cloud, 0.72, 1.0);
   }
 
-  const hour = THREE.MathUtils.clamp(controls.hour(), CLOCK_START_HOUR, CLOCK_END_HOUR);
+  const hour = THREE.MathUtils.clamp(settings.hour, CLOCK_START_HOUR, CLOCK_END_HOUR);
   if (hour !== appliedHour) {
     appliedHour = hour;
     const daylight = daylightAtHour(hour);
     sunDir.copy(daylight.sunDir);
+    // The sun comes over the left shoulder here, not the right
+    // (scene/puddle.ts's MIRROR_SUN_AZIMUTH). Only the sky's own scattering
+    // reads this vector, so mirroring it moves the glow and touches nothing
+    // that was fitted.
+    if (MIRROR_SUN_AZIMUTH) sunDir.x = -sunDir.x;
     // The cloud key light keeps its fitted bearing and only loses elevation —
     // see core/daylight.ts for why it is not simply swung onto the sun.
     cloudLight.copy(cloudLightForDay(CLOUD_LIGHT_DIR, daylight));
@@ -454,7 +468,7 @@ function applyControls(rainTime: number): void {
   // before this, which is a mark that barely moves at all and is why the rain
   // looked like scratches. Faster than the eye and it stops being visible;
   // slower and it stops moving.
-  postFx.setRain(rain, rainTime, Math.max(1 / controls.frameRate(), 1 / 30));
+  postFx.setRain(rain, rainTime, Math.max(1 / settings.fps, 1 / 30));
 
   // The water. On the *real* clock, not simTime, for the same reason the drops
   // are: how fast a ring crosses a puddle is not a statement about how fast the
@@ -462,8 +476,10 @@ function applyControls(rainTime: number): void {
   // rings crossed the frame before the foot had finished landing.
   postFx.setWater({
     time: rainTime,
-    wind: controls.waterAmount(),
-    weave: controls.weaveAmount(),
+    wind: settings.water,
+    weave: settings.weave,
+    drizzle: settings.drizzle,
+    palette: settings.palette,
   });
 }
 
@@ -509,7 +525,7 @@ let nextDraw = 0;
 function renderLoop(now: number) {
   requestAnimationFrame(renderLoop);
 
-  // The frame rate cap (ui/controls.ts). Skipping happens *before* the clock is
+  // The frame rate cap. Skipping happens *before* the clock is
   // read, which is the whole trick: THREE.Clock only advances when it is asked
   // to, so a skipped tick folds into the next frame's dt and the sky drifts and
   // the rain falls at exactly the same rate at 30 as at 60. Capping the frame
@@ -535,14 +551,14 @@ function renderLoop(now: number) {
   // measure loop is not the place to introduce that question.
   if (!fitFrame) {
     if (now < nextDraw) return;
-    const interval = 1000 / controls.frameRate();
+    const interval = 1000 / settings.fps;
     nextDraw += interval;
     if (nextDraw < now) nextDraw = now + interval;
   }
 
   const dt = clock.getDelta();
   if (frozenTime === null) {
-    simTime += dt * controls.timeScale();
+    simTime += dt * settings.speed;
     rainTime += dt;
   } else {
     simTime = frozenTime;
@@ -612,7 +628,7 @@ function renderLoop(now: number) {
     }
     for (const key of ['cloud', 'rain', 'hour'] as const) {
       const value = params[key];
-      if (value !== undefined) controls.setValue(key, value);
+      if (value !== undefined) settings[key] = value;
     }
   },
 };

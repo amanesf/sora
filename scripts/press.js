@@ -27,7 +27,7 @@ const OUT = process.argv[2] || '/tmp/press.png';
 const AGE = Number(process.argv[3] || 1.2);
 const U = Number(process.argv[4] || 0.5);
 const V = Number(process.argv[5] || 0.35);
-const WIDTH = Number(process.env.CAPTURE_W || 1408);
+const WIDTH = Number(process.env.CAPTURE_W || 1376);
 const HEIGHT = Number(process.env.CAPTURE_H || 768);
 const PORT = 5198;
 

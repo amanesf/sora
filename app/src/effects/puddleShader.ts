@@ -63,6 +63,16 @@ export const PuddleShader = {
      * wire on magenta from a dark wire on sky. Anything that is not magenta is
      * not water, whatever its brightness, so the wires come back for free and
      * at their own antialiased edges rather than as a hand-cut polygon.
+     *
+     * The two edges are set from the key that was actually painted, measured by
+     * scripts/puddle.js: its body sits at 0.72 on this scale (sRGB 206,23,248
+     * rather than a mathematical 255,0,255), so the upper edge has to be under
+     * that or the water would key at less than full strength everywhere. What
+     * lands *between* the edges is the third thing the mask carries and the
+     * reason it is worth reading as a distance at all — the girl's clear
+     * umbrella, painted over the paint at partial opacity. It keys partially,
+     * so the live sky comes through it exactly as much as it comes through the
+     * vinyl.
      */
     tMask: { value: null as THREE.Texture | null },
     /** 0 while the two assets have not arrived — see FALLBACK. */
@@ -71,10 +81,29 @@ export const PuddleShader = {
     uPlateRect: { value: new THREE.Vector4(0, 0, 1, 1) },
     /** Screen v of the water's vanishing line (scene/puddle.ts). */
     uHorizonV: { value: 0.82 },
-    /** Screen v the *rendered* horizon sits at, i.e. where the reflection's
-     * far end reads from. */
-    uSkyHorizonV: { value: 0.02 },
-    uAspect: { value: 1408 / 768 },
+    /** The band of the rendered frame the water images: x is what the far lip
+     * reads, y what the viewer's feet read (scene/puddle.ts's WATER_SKY_V0/V1).
+     * Not the whole frame — see there. */
+    uSkyV: { value: new THREE.Vector2(0.06, 0.72) },
+    /**
+     * How much the reflection is magnified vertically, and therefore how much
+     * the horizontal read has to be narrowed to match.
+     *
+     * The water covers 0.91 of the frame's height and reads a band 0.66 of the
+     * render's height, so it magnifies what it reads by 1.38 — *vertically*.
+     * Horizontally it was sampling one-for-one, so every cloud in the water came
+     * out 38% taller than it was wide. That is what "the cloud looks stretched"
+     * is, and it is an error rather than a look: a reflection is a projection of
+     * a patch of sky, and a projection's magnification does not get to differ
+     * between two axes of the same flat patch.
+     *
+     * So the horizontal read narrows by the same factor about the centre. The
+     * water then images a *smaller* piece of sky than the whole frame — which is
+     * correct, and is the same statement scene/puddle.ts's WATER_SKY_V0/V1 makes
+     * about the vertical: this is a two-metre pool, not a planetarium.
+     */
+    uSkyUScale: { value: 1.383 },
+    uAspect: { value: 1376 / 768 },
     uGroundScale: { value: 1 },
     /** The water's own clock, in real seconds — a ripple is not weather, so it
      * does not run on the speed slider. Same reasoning as the rain's clock in
@@ -108,6 +137,84 @@ export const PuddleShader = {
      * through. Measured off the reference's own asphalt in shadow.
      */
     uBedColour: { value: new THREE.Vector3(0.075, 0.086, 0.106) },
+    /**
+     * The water's palette, measured straight off the reference, and the one
+     * part of this pass that is fitted rather than reasoned.
+     *
+     * Two rounds of this were spent on a per-channel power curve `k · c^γ`,
+     * solved from a bright pair and a dark pair. It got the average right and
+     * the picture wrong, and the band-by-band measurement (scripts/analyse.js)
+     * says exactly why. Over the reference's keyed water, from the far lip down
+     * to the viewer's feet, the open sky in it runs
+     *
+     *   (86,115,160) → (73,101,145) → (61,87,131) → (52,77,123) → (47,69,112)
+     *   → (42,59,95) → (35,49,83)
+     *
+     * and the cloud in it stays between (171,171,168) and (190,182,169) for
+     * five of those seven bands before falling away in the last two. That is a
+     * *narrow* tonal range — about 50 levels of ramp on the blue — sitting under
+     * a nearly flat cloud. The render's own sky, mapped into the same water,
+     * ran (130,158,188) to (10,25,61): a range two and a half times as wide.
+     *
+     * No power curve can fix that, and it is worth being precise about why: γ>1
+     * darkens the midtones and *widens* the range, γ<1 lifts them and widens it
+     * the other way, and a gain moves both ends together. Range compression
+     * with an independent target at each end is not a curve, it is an
+     * interpolation — so this is one.
+     *
+     * The reflected sky is classified as cloud or open sky by its own
+     * saturation (the render's sky sits at b−r ≈ 0.25, its cloud at ≈ 0.02,
+     * and nothing lies between), and the result picks a colour off the ramp the
+     * reference actually painted, at this pixel's depth into the water. The
+     * live render then supplies the *detail* — every shape, every edge, every
+     * ripple, and the tonal variation inside the cloud — as a luminance ratio
+     * about its own class mean.
+     *
+     * What this does and does not decide is worth stating. It fixes the
+     * palette: the water can only be the colours the reference's water is. It
+     * decides nothing about where the cloud is, what shape it has, how it moves
+     * or how the ripples cross it — all of that is the live scene, and none of
+     * it is available to a painting.
+     */
+    /**
+     * What the water does to the sky it reflects: one per-channel curve
+     * `k · c^γ` in display space, and nothing else.
+     *
+     * There was a version of this that replaced the reflection's colours
+     * outright — a palette measured off the reference, with the render supplying
+     * only the shading. It matched every statistic it was fitted to and it
+     * looked wrong: two anchors with a classifier between them posterises, and
+     * the water came out as flat cutout cloud on flat blue. The mistake was
+     * treating the parent project's colour as the thing to replace. Those
+     * colours are not a default — cloudRamp.ts is a ramp *measured off an
+     * illustration*, and the cloud shader, the daylight model and the post chain
+     * were all fitted around it. It is the most carefully fitted thing here, and
+     * a puddle is not a reason to throw it away.
+     *
+     * So the render keeps its own colour and its own modelling, and the water
+     * only does what water does to what it reflects. Solved per channel against
+     * the reference's keyed water, from a dark pair and a bright pair:
+     *
+     *              blue water              cloud in the water
+     *   reference  ( 46,  72, 116)         (248, 238, 214)
+     *   render     ( 80, 130, 166)         (219, 225, 228)
+     *
+     * The blue is less than half as bright as the sky that made it while the
+     * cloud is brighter and warmer, which no exposure scale and no tint can do
+     * at once — one darkens both ends, the other moves both hues the same way.
+     * It takes a curve, and the physics agrees: the dark blue is sky radiance
+     * attenuated by a few percent of Fresnel over near-black asphalt, the white
+     * is a specular highlight of a source bright enough to survive that. The
+     * midtones fall hard; the highlights hold.
+     *
+     * Iterated once against the curve's own output and composed, because bloom,
+     * Kuwahara and macro-contrast all run before this and are not linear, so the
+     * input moves a little when the curve moves. The second solve's exponents
+     * were all within 10% of 1.
+     */
+    uWaterGamma: { value: new THREE.Vector3(1.631, 2.355, 2.122) },
+    uWaterGain: { value: new THREE.Vector3(1.299, 1.228, 0.985) },
+    uPalette: { value: 1 },
   },
   vertexShader: /* glsl */ `
     varying vec2 vUv;
@@ -123,7 +230,8 @@ export const PuddleShader = {
     uniform float uHasAssets;
     uniform vec4 uPlateRect;
     uniform float uHorizonV;
-    uniform float uSkyHorizonV;
+    uniform vec2 uSkyV;
+    uniform float uSkyUScale;
     uniform float uAspect;
     uniform float uGroundScale;
     uniform float uTime;
@@ -136,6 +244,9 @@ export const PuddleShader = {
     uniform vec3 uDayTint;
     uniform float uRainExposure;
     uniform vec3 uBedColour;
+    uniform vec3 uWaterGamma;
+    uniform vec3 uWaterGain;
+    uniform float uPalette;
     varying vec2 vUv;
 
     const float RING_LIFE = ${RING_LIFE.toFixed(1)};
@@ -193,9 +304,16 @@ export const PuddleShader = {
      */
     float rainRings(vec2 g, float t) {
       if (uRain < 0.004) return 0.0;
-      float cells = 1.7;
+      // Just under a metre per cell, and a period measured in seconds rather
+      // than fractions of one. Both were three times denser and faster to begin
+      // with, which produced a uniformly agitated surface — physically a
+      // downpour, and nothing like the reference, which holds perhaps six
+      // separate ring systems wide enough to count the rings in. What makes
+      // that picture is not how much rain there is, it is that each strike is
+      // *resolvable*: far apart, and still ringing seconds later.
+      float cells = 0.95;
       vec2 c0 = floor(g * cells);
-      float period = mix(2.2, 0.42, uRain);
+      float period = mix(4.2, 1.1, uRain);
       float sum = 0.0;
       for (int j = -1; j <= 1; j++) {
         for (int i = -1; i <= 1; i++) {
@@ -205,13 +323,13 @@ export const PuddleShader = {
           float age = mod(t + r.x * period * 6.0, period);
           float d = length(g - centre);
           float radius = age * RING_SPEED * 0.8;
-          float wave = sin((d - radius) * 26.0)
-            * exp(-abs(d - radius) * 9.0)
-            * exp(-age * 2.4);
+          float wave = sin((d - radius) * 17.0)
+            * exp(-abs(d - radius) * 5.5)
+            * exp(-age * 1.4);
           sum += wave;
         }
       }
-      return sum * 0.22 * uRain;
+      return sum * 0.62 * uRain;
     }
 
     /** The wind chop: three crossing trains, none of them commensurate, so the
@@ -256,6 +374,19 @@ export const PuddleShader = {
       return h;
     }
 
+    /** The rendered sky, as this water's own colour at this depth. See the
+     * palette uniforms above. */
+    /** The rendered sky, as this water reflects it. See the curve above. */
+    vec3 intoWater(vec3 rendered, float depth) {
+      if (uPalette < 0.5) return rendered;
+      vec3 wet = clamp(uWaterGain * pow(max(rendered, 0.0), uWaterGamma), 0.0, 1.4);
+      // And a little further down toward the near lip, where the view is
+      // steepest and the least is reflected. Small, and linear in depth rather
+      // than another curve: the response above is what the water does to a
+      // colour, this is only how much of it comes back.
+      return wet * (1.0 - 0.16 * depth);
+    }
+
     void main() {
       vec2 uv = vUv;
       vec2 refUv = uPlateRect.xy + uv * uPlateRect.zw;
@@ -267,7 +398,21 @@ export const PuddleShader = {
       float key;
       if (uHasAssets > 0.5) {
         vec3 m = texture2D(tMask, refUv).rgb;
-        key = smoothstep(0.35, 0.72, min(m.r, m.b) - m.g);
+        key = smoothstep(0.30, 0.62, min(m.r, m.b) - m.g);
+        // Partial key, squared-ish.
+        //
+        // 61,856 pixels of this frame key partially, at a mean keyness of
+        // 0.514, and nearly all of them are the girl's clear umbrella lying
+        // across the water. On the straight ramp that came out at about 0.68 —
+        // two thirds live sky — and the umbrella read as barely there. Vinyl
+        // that clear does not exist: even the clearest sheet reflects a few
+        // percent off two surfaces, scatters at every crease, and carries its
+        // own ribs and highlights, which is exactly what the illustration
+        // painted. So the middle of the ramp is pulled down while both ends
+        // stay pinned, and what the umbrella passes lands near 0.45 — the water
+        // is visible through it, as a thing seen through vinyl rather than a
+        // hole in it.
+        key = pow(key, 1.9);
       } else {
         // FALLBACK: no photograph, no key. Everything below the vanishing line
         // is water, with the edge broken up so it is a puddle rather than a
@@ -327,15 +472,18 @@ export const PuddleShader = {
       //
       // Clamped as well, because the far lip's ground coordinates run to
       // infinity and an unclamped slope there samples the whole sky at once.
-      vec2 push = slope * 0.0013 * fine * (0.25 + 0.75 * (1.0 - depth));
+      vec2 push = slope * 0.0013 * fine * (0.45 + 0.55 * (1.0 - depth));
       push = clamp(push, vec2(-0.035), vec2(0.035));
 
       // The mirror. The rendered frame is the reflected hemisphere already
       // (scene/puddle.ts aims the camera up), so this is a remap of the water's
       // depth onto the render's own horizon-to-zenith span, not a flip.
-      vec2 skyUv = vec2(uv.x, mix(uSkyHorizonV, 1.0, depth)) + push;
+      vec2 skyUv = vec2(
+        0.5 + (uv.x - 0.5) / uSkyUScale,
+        mix(uSkyV.x, uSkyV.y, depth)) + push;
       skyUv = clamp(skyUv, vec2(0.001), vec2(0.999));
       vec3 sky = texture2D(tDiffuse, skyUv).rgb;
+      sky = intoWater(sky, depth);
 
       // Fresnel, the honest way round: grazing is a total mirror, straight down
       // is not. Only the last stretch underfoot lets any road through, which is
@@ -348,9 +496,9 @@ export const PuddleShader = {
       // dot product over the gradient the displacement already computed. It
       // costs nothing extra and it cannot disagree with the ripples, because it
       // *is* the ripples.
-      vec3 n = normalize(vec3(-slope.x * 0.012, 1.0, -slope.y * 0.012));
-      vec3 lightDir = normalize(vec3(-0.42, 0.68, -0.60));
-      float spec = pow(max(dot(n, lightDir), 0.0), 220.0);
+      vec3 n = normalize(vec3(-slope.x * 0.032, 1.0, -slope.y * 0.032));
+      vec3 lightDir = normalize(vec3(-0.52, 0.62, -0.59));
+      float spec = pow(max(dot(n, lightDir), 0.0), 90.0);
       // Broken up, so it reads as separate points of light rather than as a
       // varnish over the whole surface. The hash rides the ground plane, so the
       // grain gets finer with distance like everything else here.
@@ -360,6 +508,29 @@ export const PuddleShader = {
       // patch both carry more slope than flat water, so the light gathers where
       // something is happening to the water. 光を編む.
       glint *= 0.4 + 1.6 * min(abs(h), 1.0);
+
+      // The crest line.
+      //
+      // Specular alone is not enough to make a ring visible, and the reason is
+      // worth stating because it looked like a tuning problem for two rounds:
+      // the ring's only mechanism is displacement, and displacing a *uniform*
+      // area produces nothing at all. Over the reflected cloud a pressed ring
+      // reads beautifully; over the reference's deep navy — which is most of
+      // the water — it was invisible, because moving navy onto navy is a
+      // no-op.
+      //
+      // A real ring is visible there for a reason this pass was missing. The
+      // crest is a band of steeply tilted water, and tilted water stops
+      // reflecting the patch of sky directly above it and starts reflecting a
+      // brighter patch nearer the horizon — so the ring draws itself as a thin
+      // bright line whatever it is crossing. That is what this term is: a
+      // slope-magnitude highlight, tinted by the horizon rather than by the
+      // sun, so it appears on every crest and not only on the ones that happen
+      // to be aimed at the light.
+      float steep = smoothstep(0.35, 2.6, length(slope) * fine);
+      vec3 horizonLight = intoWater(texture2D(tDiffuse, vec2(skyUv.x, uSkyV.x)).rgb, 0.0);
+
+      water = mix(water, horizonLight, steep * 0.30 * (0.4 + 0.6 * uWeave));
 
       water += uSunTint * glint * 0.9;
 
