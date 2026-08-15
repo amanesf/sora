@@ -64,8 +64,20 @@ export const GoldenLightShader = {
      * size together at 0.055 took the rain back out of the picture entirely —
      * the two multiply, and a third as many marks at two thirds the size is a
      * ninth of the light. Density and size are one decision, not two.
+     *
+     * 0.0425, halved, with the rain's own share halved beside it (`0.10 * uRain`
+     * where the drop test is made) so that the count comes out at exactly half
+     * of what it was at every setting of the slider rather than only at this
+     * one. Half the drops in the air, each the size and the brightness it
+     * always was — which is the same halving the water's rings get in
+     * effects/puddleShader.ts, and has to be, because they are the same rain
+     * seen twice: once on the way down and once where it lands.
+     *
+     * This is the one direction the paragraph above does not warn against.
+     * Cutting count and size together is a ninth of the light; cutting the
+     * count alone is half of it, which is what half as much rain looks like.
      */
-    uDensity: { value: 0.085 },
+    uDensity: { value: 0.0425 },
     /**
      * The sparkle: points of light that hang in the air and blink, as distinct
      * from the rain, which falls.
@@ -214,7 +226,7 @@ export const GoldenLightShader = {
       for (int j = -1; j <= 1; j++) {
         vec2 c = cell + vec2(0.0, float(j));
         vec2 r = vec2(hash21(c + seed), hash21(c + seed + 7.3));
-        if (r.x > uDensity + 0.20 * uRain) continue;
+        if (r.x > uDensity + 0.10 * uRain) continue;
         vec2 centre = vec2(r.y, hash21(c + seed + 3.1)) * 0.8 + 0.1;
 
         // Every drop a different size, and a wide range of them: a field of

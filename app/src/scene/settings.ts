@@ -88,6 +88,17 @@ export const RAIN = 0.06;
  * subject is a surface being disturbed is the wrong side of the line to be on.
  * The reference holds about six ring systems wide enough to count the rings in,
  * and this is where a still frame holds about that many.
+ *
+ * It stays here while the rain is halved, and that is deliberate rather than an
+ * oversight. This slider is an *intensity*, and both of the things it drives
+ * read it twice: the rings get their rate and their height from it, the sparks
+ * their count and their brightness. Taking it to 0.31 to halve the rain would
+ * therefore also halve how tall a ring stands — and a ring at half height in
+ * this water is not a quieter ring, it is no ring at all, which is the state
+ * 0.45 was raised out of in the first place. So the halving is done where the
+ * rain's *rate* is, in effects/puddleShader.ts's rainRings period and
+ * effects/goldenLight.ts's uDensity, and this stays at the intensity the
+ * reference has. Half as many drops, each one exactly as it was.
  */
 export const DRIZZLE = 0.62;
 

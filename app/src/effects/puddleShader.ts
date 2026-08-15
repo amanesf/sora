@@ -168,8 +168,25 @@ export const PuddleShader = {
      * fragmented. Ratios this large are exactly why "apply the same
      * displacement to everything" is wrong even though the surface is the same
      * surface.
+     *
+     * 0.13, halved again, and the second halving is about her legs.
+     *
+     * At 0.26 the wires held and her shins did not: a ring crossing them bit
+     * notches out of the outline several pixels deep, and on a limb about
+     * twenty pixels wide a notch that size is not a ripple passing over a leg,
+     * it is a leg that stops at the knee. The bound that matters is not how far
+     * the painted layer moves but how fast the movement *changes* across it — a
+     * warp stays a warp only while its gradient is small compared with the
+     * narrowest thing being warped, and past that it stops bending an outline
+     * and starts cutting it. Her shins are the narrowest thing in the puddle
+     * after the wires, so they set the number, and the clamp below sets the
+     * ceiling that a single loud ring cannot argue with.
+     *
+     * The sky keeps the full displacement, and the asymmetry is the point: a
+     * reflected sky has no thin structure to cut, which is why water can fold
+     * it as hard as it likes and still look like water.
      */
-    uPhotoWarp: { value: 0.26 },
+    uPhotoWarp: { value: 0.13 },
     /**
      * The water's palette, measured straight off the reference, and the one
      * part of this pass that is fitted rather than reasoned.
@@ -352,7 +369,17 @@ export const PuddleShader = {
       // *resolvable*: far apart, and still ringing seconds later.
       float cells = 1.25;
       vec2 c0 = floor(g * cells);
-      float period = mix(4.2, 1.4, uRain);
+      // Doubled from mix(4.2, 1.4): half as many strikes per square metre per
+      // second, and every one of them the ring it always was.
+      //
+      // The rate is the honest place to take rain out. The slider it runs on is
+      // an intensity and moves the rings' height with their number, so turning
+      // *that* down does not thin the rain, it fades it — and a ring visible
+      // only while it is at its loudest is the failure this whole term was
+      // built out of. Period rather than amplitude, so what changes is how
+      // often the water is struck and nothing else: the same rings, standing in
+      // the same water, with twice as much still surface between them.
+      float period = mix(8.4, 2.8, uRain);
       float sum = 0.0;
       for (int j = -1; j <= 1; j++) {
         for (int i = -1; i <= 1; i++) {
@@ -533,7 +560,14 @@ export const PuddleShader = {
       // are both read at the displaced position, so a wire and its own
       // keyed-ness travel together rather than the wire sliding out from under
       // the hole it is supposed to be filling.
-      vec2 warpedUv = refUv + push * uPlateRect.zw * interior * uPhotoWarp;
+      // Clamped in its own right, and not only scaled: 'push' is already
+      // clamped, but at its ceiling it is still 25 screen pixels, and a
+      // fraction of a large number is a large number wherever a ring happens to
+      // be loud. Her shins are about twenty pixels across, so the painted layer
+      // is allowed a fifth of that — enough that the water visibly runs over
+      // her and not enough that any edge in the photograph can be cut through.
+      vec2 photoPush = clamp(push * uPhotoWarp, vec2(-0.0028), vec2(0.0028));
+      vec2 warpedUv = refUv + photoPush * uPlateRect.zw * interior;
       float key = keyRaw;
       if (uHasAssets > 0.5 && interior > 0.004) {
         vec4 moved = texture2D(tMask, warpedUv);

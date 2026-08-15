@@ -80,6 +80,59 @@ async function main() {
    */
   const RETOUCH = [{ cx: 1320, cy: 708, rx: 26, ry: 24 }];
 
+  /**
+   * The umbrella's canopy, as a measured outline, keyed *partially*.
+   *
+   * effects/puddleShader.ts has always said the mask's third state is the
+   * vinyl — fully keyed is open water, unkeyed is the ink of the ribs, and a
+   * partial key is a sheet you can see through. Measured off the painted mask,
+   * that state was not in it: the canopy reads 0.58-0.73 on the magenta
+   * distance against open water's 0.71, which is to say whoever painted the
+   * key painted straight across the umbrella, as anyone would — it is a clear
+   * umbrella, and what is behind it is water. So the app keyed the canopy as
+   * open water and the umbrella came out perfectly invisible, eight ink ribs
+   * standing in the pool with no sheet on them.
+   *
+   * That is wrong about vinyl in a way that is worth being precise about,
+   * because "clear" is not "absent". A clear sheet transmits most of what is
+   * behind it, absorbs a little, scatters a little more, and reflects a few
+   * percent off each of its two faces. The last of those is why you can see
+   * one at all on a bright day, and the shader already draws it (its `vinyl`
+   * term) — but that term is a function of the key, so with the canopy keyed
+   * solid it had nothing to draw on. All three properties come back the moment
+   * the key says "partly water" here: the reflection is mixed with the
+   * photograph's own canopy rather than replacing it, and the sheen appears
+   * because the key is no longer at either end of its range.
+   *
+   * Measured like HORIZON_ROW and the character ellipses, because the same
+   * thing is true of it: the umbrella does not move. Nine points around the
+   * rim, read off the painted mask, laid on the ink line rather than inside it
+   * so the sheet's edge is the rib the illustrator already drew. The stretch
+   * between the two upper points is behind her head and shoulder, where
+   * nothing is keyed and the polygon therefore cannot show.
+   */
+  const CANOPY = [
+    [1035, 568], [1112, 526], [1176, 512], [1237, 546], [1297, 578],
+    [1302, 673], [1201, 735], [1103, 715], [1031, 646],
+  ];
+
+  /**
+   * What the canopy keys at, on the shader's own scale.
+   *
+   * 0.58 of the key, which the shader reads as "58% of what is behind this
+   * pixel is live water and 42% is the thing painted on it". Chosen at the
+   * transmittance of the material rather than by eye: shop vinyl of this
+   * weight passes most of the light and takes a visible bite out of the rest,
+   * and the same number puts the shader's sheen term (`key * (1 - key) * 4`)
+   * within a couple of percent of its peak, which is where a sheet catching
+   * the sky wants to be.
+   *
+   * Written here as the key the shader will compute, and inverted through its
+   * smoothstep and its exponent below, so that changing this constant means
+   * changing the transparency of the umbrella and nothing else.
+   */
+  const CANOPY_KEY = 0.58;
+
   const outDir = path.join(__dirname, '..', 'app', 'public');
   fs.mkdirSync(outDir, { recursive: true });
 
@@ -101,6 +154,76 @@ async function main() {
       + `fill="rgb(${PAINT.r},${PAINT.g},${PAINT.b})"/>`).join('')
     + '</svg>',
   );
+
+  /**
+   * Paint the canopy into the key at CANOPY_KEY, in place.
+   *
+   * Two things it is careful about, and both are the same care the retouch
+   * ellipses take: it only ever *removes* key, and it removes it in proportion
+   * to how keyed the pixel already was. So the ribs, the rim and the girl —
+   * everything drawn over the paint, which is everything that makes the
+   * umbrella an umbrella — keep exactly the key they had, and the sheet
+   * appears only in the water between them.
+   *
+   * The key is the magenta distance, so the paint is applied by lifting green
+   * toward the two other channels rather than by writing a colour: the mask's
+   * own paint is not a mathematical magenta and is not uniform, and a pixel
+   * that keys at 0.58 of *its own* colour is what the shader is going to read.
+   */
+  function paintCanopy(data, polygon, keyWanted) {
+    // The shader's key is smoothstep(0.30, 0.62, d) raised to 1.9, so the
+    // distance that produces the wanted key is that composition run backwards:
+    // the exponent by a root, the smoothstep by its own closed-form inverse.
+    const s = Math.pow(keyWanted, 1 / 1.9);
+    const t = 0.5 - Math.sin(Math.asin(Math.max(-1, Math.min(1, 1 - 2 * s))) / 3);
+    const wanted = (0.30 + 0.32 * t) * 255;
+
+    // Coverage, supersampled 3x3, so the rim arrives with the same soft edge
+    // the ink line has rather than as a staircase across it.
+    const inside = (px, py) => {
+      let hit = false;
+      for (let i = 0, j = polygon.length - 1; i < polygon.length; j = i++) {
+        const [xi, yi] = polygon[i];
+        const [xj, yj] = polygon[j];
+        if ((yi > py) !== (yj > py)
+          && px < xi + ((py - yi) / (yj - yi)) * (xj - xi)) hit = !hit;
+      }
+      return hit;
+    };
+
+    let box = [1e9, 1e9, -1e9, -1e9];
+    for (const [x, y] of polygon) {
+      box = [Math.min(box[0], x - 2), Math.min(box[1], y - 2),
+        Math.max(box[2], x + 2), Math.max(box[3], y + 2)];
+    }
+
+    let painted = 0;
+    for (let y = Math.max(0, box[1] | 0); y <= Math.min(FRAME_HEIGHT - 1, box[3] | 0); y++) {
+      for (let x = Math.max(0, box[0] | 0); x <= Math.min(FRAME_WIDTH - 1, box[2] | 0); x++) {
+        let cover = 0;
+        for (let sy = 0; sy < 3; sy++) {
+          for (let sx = 0; sx < 3; sx++) {
+            if (inside(x + (sx + 0.5) / 3, y + (sy + 0.5) / 3)) cover++;
+          }
+        }
+        if (cover === 0) continue;
+        const i = (y * FRAME_WIDTH + x) * 3;
+        const floor = Math.min(data[i], data[i + 2]);
+        const d = floor - data[i + 1];
+        // How much of this pixel is water in the key as painted. A rib is 0
+        // and keeps everything it has; open canopy is 1 and takes the sheet.
+        const water = Math.max(0, Math.min(1, (d / 255 - 0.30) / 0.32));
+        const w = (cover / 9) * water;
+        // Never the other way: a pixel already keying below the sheet is ink,
+        // and ink is not something to make more transparent.
+        const green = Math.max(data[i + 1], floor - wanted);
+        data[i + 1] = Math.round(data[i + 1] + (green - data[i + 1]) * w);
+        if (w > 0.5) painted++;
+      }
+    }
+    console.log(`canopy         ${painted} px of vinyl at key ${keyWanted.toFixed(2)} `
+      + `(magenta distance ${(wanted / 255).toFixed(3)})`);
+  }
 
   /** Separable box blur over a float field, used by both masks below. */
   function boxBlur(field, radius) {
@@ -482,6 +605,13 @@ async function main() {
   const refRaw = await sharp(refPath).resize(fit).removeAlpha().raw().toBuffer();
   const interiorAlpha = puddleInterior(maskRaw);
   const character = characterMask(maskRaw, refRaw);
+  // After both, deliberately. The interior is the puddle's outline and the
+  // character is her grade, and neither has an opinion about how transparent
+  // the umbrella is: the canopy is inside the pool and drawn over by her
+  // either way. Painting it before this point would quietly move both — the
+  // grade in particular, which lifts by how *un*-keyed a pixel is and would
+  // start lifting the water under the sheet.
+  paintCanopy(maskRaw, CANOPY, CANOPY_KEY);
 
   for (const [src, name] of [[refPath, 'ref.webp'], [maskPath, 'mask.webp']]) {
     const meta = await sharp(src).metadata();
