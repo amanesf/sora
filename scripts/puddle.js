@@ -268,16 +268,31 @@ async function main() {
    * a gain to keep its shadow dark while its lit edge rose.
    *
    * So the same three things a colourist would reach for, in the order they are
-   * always reached for, and all in linear light:
+   * always reached for, and all in linear light.
+   *
+   * The three values below were first set to land her at the cloud's own range
+   * — 145 against 142 — on the reasoning that matching it was the target. It
+   * was not; it was the floor. Matched, she was no longer flat and she was
+   * still the quieter of the two, because the cloud is also the brightest thing
+   * in the frame and a subject that merely ties the backdrop loses. Where they
+   * sit now is a stop past that, and the stop after this one is not available:
+   * at 2.45/1.70 her 99th percentile reaches 255 and the blouse stops having
+   * folds, which is the same disappearance as the grey skirt at the other end.
    */
-  const CHARACTER_LIFT = 2.05;
+  const CHARACTER_LIFT = 2.30;
   /**
    * Contrast, about her own middle rather than the frame's. Pivoting on mid
    * grey would simply be a second exposure on her, since all of her is below
    * it; pivoting on her median darkens the serge and the hair and opens the
    * blouse and the rim on her legs, which is what "she is flat" actually means.
+   *
+   * At 1.60 her range is 173 against the cloud's 141 — wider than the thing she
+   * is standing next to, which is the right way round for a subject and is only
+   * affordable because the curve is a power about a pivot rather than a gain:
+   * the shadow end compresses as it darkens instead of clipping, so the serge
+   * goes to 27 rather than to nothing.
    */
-  const CHARACTER_CONTRAST = 1.35;
+  const CHARACTER_CONTRAST = 1.60;
   /**
    * Chroma about luma, so it moves colour without moving the brightness the
    * two constants above just settled. She is not a grey subject — the serge is
@@ -285,8 +300,13 @@ async function main() {
    * *ratios* between her channels, which is precisely why it could not restore
    * what a dark subject loses: chroma read at a distance is a distance, and
    * hers was small because she was dark.
+   *
+   * The smallest of the three moves, because it is not the only one making
+   * colour: a power curve on each channel separately spreads them as it opens
+   * the picture, so the contrast above carries chroma with it. 1.40 with that
+   * lands at 0.481 against the cloud's 0.385.
    */
-  const CHARACTER_CHROMA = 1.35;
+  const CHARACTER_CHROMA = 1.40;
   /**
    * Where the contrast pivots: her median in the photograph, 68 of 255,
    * measured over the same weighted pixels the grade is applied to and carried
