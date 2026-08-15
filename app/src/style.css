@@ -213,9 +213,13 @@ body {
   transition: opacity 900ms ease;
 }
 
+/* It used to leave for good on the first press, on the reasoning that an
+   instruction you have already followed is clutter. That is true of a button's
+   tooltip and false here: pressing the water is not a step to get past, it is
+   the whole of what the app does, and there is nothing else to go on to. So the
+   line stays. */
 .is-touched .hint {
-  opacity: 0;
-  animation: none;
+  opacity: 0.7;
 }
 
 /* The breathe, with its floor lifted from 0.42 to 0.7.

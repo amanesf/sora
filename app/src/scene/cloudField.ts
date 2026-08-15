@@ -158,16 +158,23 @@ function convectiveShape(rand: () => number, weather: number, sheared: boolean):
  * each. That is a real change with a real cost and it should be made
  * deliberately, not as a side effect of a size complaint.
  *
- * So the sky gets the other answer instead — more cloud rather than bigger
- * cloud, in the tier counts below — and every lobe keeps the size it was
- * fitted at.
+ * The other answer was tried too — the tier counts up about half again — and it
+ * is also not it. More clusters at these radii do not read as more sky, they
+ * read as clusters packed close enough to intersect, and two overlapping
+ * silhouettes meet at a point: the cloud came out spiky. Coverage is already
+ * near 1.0 for the deck tiers at this weather, which is the same thing the
+ * `overcast` note below says — past that point, adding slots stops adding sky
+ * and starts adding collisions.
+ *
+ * So both counts and radii stay where they were fitted, and "the clouds are too
+ * small" is left open rather than answered wrongly a third time.
  */
 const TIER_RADIUS_SCALE = 1.0;
 
 const TIERS: TierSpec[] = [
   {
     name: 'tower',
-    count: 6,
+    count: 4,
     zNear: 15,
     zSpan: 6,
     baseAlt: 1.4,
@@ -188,7 +195,7 @@ const TIERS: TierSpec[] = [
   },
   {
     name: 'cumulus',
-    count: 15,
+    count: 10,
     zNear: 6,
     zSpan: 10,
     baseAlt: 1.4,
@@ -209,7 +216,7 @@ const TIERS: TierSpec[] = [
   },
   {
     name: 'deck-near',
-    count: 38,
+    count: 26,
     zNear: 17,
     zSpan: 7,
     baseAlt: 2.3,
@@ -230,7 +237,7 @@ const TIERS: TierSpec[] = [
   },
   {
     name: 'deck-mid',
-    count: 33,
+    count: 22,
     zNear: 30,
     zSpan: 11,
     baseAlt: 2.2,
@@ -246,7 +253,7 @@ const TIERS: TierSpec[] = [
   },
   {
     name: 'bank-far',
-    count: 22,
+    count: 15,
     zNear: 55,
     zSpan: 21,
     baseAlt: 1.6,
@@ -288,7 +295,7 @@ const TIERS: TierSpec[] = [
   // squashed flat, and almost no boil (ice cloud does not convect).
   {
     name: 'altocumulus',
-    count: 24,
+    count: 16,
     // 4.6-5.9km, above the cumulus tops and below the anvils. At 22-36km out
     // that puts it just above mid-frame — the band of small regular lumps
     // ("羊雲") that sits between the low deck and the high cirrus.

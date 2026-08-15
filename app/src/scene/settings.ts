@@ -233,6 +233,12 @@ export const WEAVE = 0.62;
  */
 export const FINAL_EXPOSURE = 1.55;
 
+/** Where the exposure's shoulder puts white, in linear light — see
+ * effects/finalGrade.ts's uWhite. A little above FINAL_EXPOSURE, so the whole
+ * frame stays inside the invertible part of the curve and only a real specular
+ * is allowed to reach 1.0. */
+export const FINAL_WHITE = 1.9;
+
 /**
  * ...and the other two rise to meet it, a little.
  *

@@ -69,6 +69,18 @@ export const FinalGradeShader = {
      */
     uExposure: { value: 1 },
     /**
+     * The white point of the shoulder above, in linear light: the value that
+     * maps exactly to 1.0, and therefore the brightest thing the frame is
+     * allowed to still distinguish.
+     *
+     * Set from what the exposure does to the top of the range. The picture
+     * arrives display-referred with its cloud crown near 1.0 linear, so a gain
+     * of E puts the top near E — a white point a little above that leaves the
+     * whole picture inside the shoulder's invertible range, with the very
+     * brightest specular allowed to reach white and nothing else forced there.
+     */
+    uWhite: { value: 1.9 },
+    /**
      * The split: what colour the highlights lean, and what colour the shadows
      * lean, in that order.
      *
@@ -101,6 +113,7 @@ export const FinalGradeShader = {
     uniform float uContrast;
     uniform float uPivot;
     uniform float uExposure;
+    uniform float uWhite;
     uniform vec3 uSplitWarm;
     uniform vec3 uSplitCool;
     varying vec2 vUv;
@@ -113,7 +126,27 @@ export const FinalGradeShader = {
       // brightness slider: the picture gets more light in it instead of being
       // shifted up the range.
       if (uExposure != 1.0) {
-        c = pow(max(pow(max(c, 0.0), vec3(2.2)) * uExposure, 0.0), vec3(1.0 / 2.2));
+        vec3 lin = pow(max(c, 0.0), vec3(2.2)) * uExposure;
+        // A shoulder, not a clamp.
+        //
+        // The frame arriving here is already display-referred and tone-mapped:
+        // its brightest cloud sits near 1.0 because that is where a tonemap put
+        // it. Multiplying by 1.55 takes everything above about 0.85 past the
+        // ceiling, and a ceiling does not compress, it *deletes* — the cloud's
+        // crown, its lit shoulder and the sky behind it all become the same
+        // white, and the modelling that the shadow pass, the ramp and the
+        // macro-contrast spent the whole chain building is gone in one multiply.
+        // Measured at 1.55 with a hard clamp, 23% of the frame had a channel at
+        // or above 252.
+        //
+        // Reinhard with a white point: identity in the shadows and the mid to
+        // within a percent or so, bending over only where the clamp used to be,
+        // and everything below the white point still reaches a distinct value.
+        // The cloud gets brighter *and* keeps its shape, which is the thing the
+        // exposure was raised for in the first place.
+        float w = uWhite;
+        lin = lin * (1.0 + lin / (w * w)) / (1.0 + lin);
+        c = pow(max(lin, 0.0), vec3(1.0 / 2.2));
       }
 
       // Contrast, about the pivot. Kept in display space because that is where

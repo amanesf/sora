@@ -434,30 +434,48 @@ export const PuddleShader = {
       return sum * 0.22 * uRain;
     }
 
-    /** Smooth value noise on the ground plane, and its two-octave sum below.
+    /** Gradient noise on the ground plane, and the two reasons it is not the
+     * obvious thing.
      *
-     * The wind chop was three sine trains for a long time, and every version of
-     * it striped the water. That is not a property of the trains that were
-     * chosen, it is a property of sine: a sinusoid is a stripe, and a sum of
-     * three of them is three stripes crossing. Whichever way they were pointed
-     * the picture got bands — along the line of sight they came out as vertical
-     * bars that perspective could not thin, and turned across the view they
-     * came out as horizontal ones instead, which is the same fault seen from
-     * the other side. There is no bearing that fixes it.
+     * The chop was three sine trains for a long time, and every version of it
+     * striped the water — along the line of sight as vertical bars perspective
+     * could not thin, across the view as horizontal ones. That is not a bearing
+     * problem: a sine *is* a stripe, and there is no direction to point one that
+     * stops it being one. So the trains went and noise came in.
      *
-     * What the surface is supposed to be is a wind-roughened sheet of water,
-     * and that has no repeat in it at all. So the trains are gone and this is
-     * noise: irregular by construction, with nothing in it that can line up.
+     * The first noise was **value** noise with a cubic fade, and it drew squares
+     * — a grid of cells over the whole pool. Both halves of that are wrong here
+     * and both matter, because of what this function is actually used for.
+     *
+     * *Value* noise stores one scalar per lattice point and interpolates it, so
+     * its extrema all sit on the lattice: the field is a grid of bumps wearing a
+     * smooth coat. Nobody sees that in the height — but nothing here reads the
+     * height. The displacement, the crest term and the glint all read the
+     * *gradient*, and differentiating a value-noise field puts the lattice
+     * straight back on screen. Gradient noise is zero at every lattice point and
+     * carries a random direction instead, so its features sit *between* the
+     * lattice points and its derivative has no grid in it.
+     *
+     * And the fade has to be **quintic**, not smoothstep. Cubic smoothstep is
+     * C1: its second derivative jumps at every cell boundary. The slope here is
+     * a finite difference of the surface, so a jump in the second derivative is
+     * a visible crease — a square grid of them. 6t^5-15t^4+10t^3 is C2, which is
+     * the whole reason Perlin replaced his own cubic with it.
      */
-    float vnoise(vec2 p) {
+    vec2 hash22s(vec2 p) {
+      vec2 h = hash22(p) * 2.0 - 1.0;
+      return normalize(h + sign(h) * 1e-4);
+    }
+
+    float gnoise(vec2 p) {
       vec2 i = floor(p);
       vec2 f = fract(p);
-      f = f * f * (3.0 - 2.0 * f);
-      float a = hash21(i);
-      float b = hash21(i + vec2(1.0, 0.0));
-      float c = hash21(i + vec2(0.0, 1.0));
-      float d = hash21(i + vec2(1.0, 1.0));
-      return mix(mix(a, b, f.x), mix(c, d, f.x), f.y) * 2.0 - 1.0;
+      vec2 u = f * f * f * (f * (f * 6.0 - 15.0) + 10.0);
+      float a = dot(hash22s(i), f);
+      float b = dot(hash22s(i + vec2(1.0, 0.0)), f - vec2(1.0, 0.0));
+      float c = dot(hash22s(i + vec2(0.0, 1.0)), f - vec2(0.0, 1.0));
+      float d = dot(hash22s(i + vec2(1.0, 1.0)), f - vec2(1.0, 1.0));
+      return mix(mix(a, b, u.x), mix(c, d, u.x), u.y) * 1.4;
     }
 
     /**
@@ -478,10 +496,20 @@ export const PuddleShader = {
      * evolves, it does not stand still and pulse.
      */
     float chop(vec2 g, float t, float fine) {
+      // Each octave is rotated as well as scaled, by an angle that is no simple
+      // fraction of a turn. Stacked on the same axes, three octaves of any
+      // lattice noise still share a lattice — the cells line up at every scale
+      // and the sum has more grid in it than any one term does. Rotating breaks
+      // the alignment, which is the cheapest way to make a sum of lattice noise
+      // stop looking like a lattice.
+      const mat2 rot = mat2(0.8, -0.6, 0.6, 0.8);
       vec2 drift = vec2(0.0, -t * 0.13);
-      float h = vnoise((g + drift) * 2.6) * 0.22;
-      h += vnoise((g + drift * 1.7) * 5.9 + 13.0) * 0.12 * fine;
-      h += vnoise((g + drift * 2.4) * 12.5 + 41.0) * 0.06 * fine * fine;
+      vec2 p = (g + drift) * 2.6;
+      float h = gnoise(p) * 0.22;
+      p = rot * p * 2.27 + 13.0;
+      h += gnoise(p) * 0.12 * fine;
+      p = rot * p * 2.12 + 41.0;
+      h += gnoise(p) * 0.06 * fine * fine;
       return h;
     }
 
@@ -698,7 +726,25 @@ export const PuddleShader = {
         painted = pow(max(lin, 0.0), vec3(1.0 / 2.2));
       }
 
-      if (key < 0.002) {
+      // Painted, and not water — but *inside the pool*, which is the case this
+      // early-out used to get wrong and the whole of "the ripple goes behind
+      // her".
+      //
+      // The girl, the umbrella's ribs, the wires, the pole and the reflected
+      // house are all unkeyed by construction: they are things lying on the
+      // water, and the key exists to let them survive on top of the live
+      // reflection. So the key is 0 over every one of them, and this returned the
+      // bare photograph before reaching a single line of surface light. Every
+      // crest, every glint, every sheen was drawn on the water *around* her and
+      // stopped dead at her outline — which does not read as a figure under a
+      // rippling surface, it reads as a figure cut out and laid on one.
+      //
+      // The condition that actually means "nothing here is water" is the
+      // interior, not the key. With it, an unkeyed pixel inside the pool falls
+      // through to the bottom of the function, where mix(painted, water, key)
+      // leaves it as the photograph — and then the surface goes over it, which
+      // is what a surface does.
+      if (key < 0.002 && interior < 0.004) {
         gl_FragColor = vec4(painted, 1.0);
         return;
       }
