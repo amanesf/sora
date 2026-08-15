@@ -144,9 +144,27 @@ export const GROUND_SCALE = 1.0;
  * without touching what the sky is, which is the honest lever: it says the pool
  * is smaller and nearer, not that the weather is different.
  *
- * Whatever this band is, effects/puddleShader.ts's uSkyUScale narrows the
- * horizontal read to match it, so magnifying stays magnifying and does not
+ * Whatever this band is, the camera's frustum is aimed at exactly it
+ * (core/frame.ts's waterBandRect), so magnifying stays magnifying and does not
  * become stretching.
+ *
+ * The bounds are the cloud's own, worked out rather than nudged. The camera
+ * pitches 25° with a 50° field, so the render spans elevation 0° at v=0.02 to
+ * 50° at v=1, and the tower tier (scene/cloudField.ts) stands 15-21km out with
+ * its base at 1.4km and its top at 8.4-10.4km — an object reaching from about
+ * 4.4° to about 27.6°.
+ *
+ * At 0.30-0.90 the water was imaging 14° to 45°: the *top half* of a tower,
+ * with eighteen degrees of empty sky above it filling the near half of the
+ * pool. That is what "the cloud is not tall enough" is — not a short cloud, a
+ * band aimed above it. A tower whose base is cut off cannot look tall no matter
+ * how much of its crown is in frame, and the flat edge where the cloud stopped
+ * partway down the water was the crown itself, seen from below.
+ *
+ * 0.10-0.74 is 4.1° to 36.7°: the tower's base arrives at the far lip, its
+ * crown lands about seven tenths of the way down, and what is left nearest the
+ * viewer is the open sky above it — deep blue, which is what the reference's
+ * near water is made of.
  */
-export const WATER_SKY_V0 = 0.30;
+export const WATER_SKY_V0 = 0.10;
 export const WATER_SKY_V1 = 0.74;

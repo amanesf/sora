@@ -177,7 +177,7 @@ export const GoldenLightShader = {
         // still frame cannot show that a dot is falling, and a short tail can.
         // Still far from a streak — this is a drop caught in a beam, not the
         // cool grey line effects/rainShader.ts draws.
-        d.y *= 0.46;
+        d.y *= 0.42;
         float r2 = dot(d, d);
         // A tight core inside a wide faint halo. The measurement says two
         // pixels across, so the halo is what gives a mark presence and the core
@@ -206,17 +206,35 @@ export const GoldenLightShader = {
         return;
       }
 
-      // The colour of the light, measured off the painted layer's own peaks:
-      // sRGB(223, 209, 185). Warm off-white, and deliberately not the saturated
-      // orange "golden rain" sounds like — against this scene's blue-grey the
-      // reference's marks read as gold at that saturation, and anything
-      // stronger reads as sparks off a firework.
+      // The colour of the light — and the first measurement of it was of the
+      // wrong thing.
+      //
+      // Reading the painted marks' own peak colour gives sRGB(223, 209, 185),
+      // normalised (1.00, 0.94, 0.83): nearly white. That is what a mark *ends
+      // up* as, and this pass adds light rather than painting marks, so what it
+      // needs is the light that was added — the difference between the two
+      // versions of the reference, over the pixels the gold version brightened:
+      //
+      //   mean      (76, 63, 41)    normalised (1.00, 0.82, 0.54)
+      //   strongest (252, 230, 146) normalised (1.00, 0.91, 0.58)
+      //
+      // Half as much blue as the finished mark has. The distinction is not
+      // pedantic: an additive layer's colour is never the colour you measure in
+      // the result, because the result is the layer *plus the scene under it*,
+      // and adding a near-white at any strength that shows on a bright road
+      // clips straight to white. Gold that cannot survive landing on something
+      // bright is not gold.
       //
       // Carried halfway toward the hour's own sun colour rather than fixed, so
       // the light in the air and the light on the cloud cannot disagree, while
       // the measured value still dominates.
-      vec3 measured = vec3(0.875, 0.820, 0.725);
-      vec3 gold = mix(measured, measured * uSunTint, 0.5) * 1.9;
+      vec3 measured = vec3(1.00, 0.82, 0.54);
+      // 1.35, and the ceiling on it is clipping rather than taste: the light is
+      // added, so a mark landing on the sunlit road at strength 1 has nowhere
+      // above 1 to go and turns white — losing exactly the hue this whole
+      // measurement was about. At this scale the strongest mark lands near 0.74
+      // in red over a mid-tone, which stays gold.
+      vec3 gold = mix(measured, measured * uSunTint, 0.5) * 1.35;
 
       float beam = shafts(vUv);
 
@@ -227,16 +245,55 @@ export const GoldenLightShader = {
         // Three layers, because 763 marks with a median of 2px and a tail out
         // to flares is not one population: near and large, mid, and a fine dust
         // that is most of the count and almost none of the light.
-        float near = sparks(vUv, 9.0, 0.11, 0.26, 0.0);
-        float mid = sparks(vUv, 26.0, 0.24, 0.15, 31.7);
-        float dust = sparks(vUv, 48.0, 0.40, 0.10, 77.1);
-        float drops = near * 0.90 + mid * 1.20 + dust * 0.34;
+        // The speeds are the difference between rain and dust, and they were
+        // dust. Screen speed is speed/scale, so 0.11 at scale 9 is 1.2% of the
+        // frame per second — a drop taking *eighty-two seconds* to cross the
+        // picture. Real rain crosses a three-metre field of view in about six
+        // tenths of one. Nothing about the marks' colour or size could make
+        // that read as rain, because at that speed it is not falling, it is
+        // drifting, and the eye knows the difference before it knows anything
+        // else about them.
+        //
+        // Now: 2.5s, 1.8s and 1.4s across the frame, near to far — nearer drops
+        // slower because they are, in fact, nearer, and parallax is the whole
+        // reason there are three layers.
+        //
+        // Not the 0.6s a real drop takes, and the overshoot is instructive: at
+        // true rain speed with a shutter long enough to see them, each mark
+        // becomes a long thin line and the frame reads as a scratched print —
+        // which is the failure the parent project's own rain pass documents at
+        // length. What has to read as falling is the *layer*, not each drop, so
+        // the marks travel a visible fraction of the frame per second and stay
+        // short enough to be drops.
+        float near = sparks(vUv, 9.0, 3.6, 0.26, 0.0);
+        float mid = sparks(vUv, 26.0, 14.4, 0.15, 31.7);
+        float dust = sparks(vUv, 48.0, 34.0, 0.10, 77.1);
+        float drops = near * 0.62 + mid * 0.80 + dust * 0.24;
 
         // Where the beam is, mostly. Not exclusively: some light is scattered
         // everywhere and the floor keeps a scatter of sparks across the whole
         // frame, rather than a hard edge where the shafts stop.
         float inBeam = 0.62 + 1.5 * beam;
-        lit += gold * drops * inBeam * amount * (0.35 + 0.65 * uRain);
+        float strength = drops * inBeam * amount * (0.35 + 0.65 * uRain);
+
+        // The core replaces; the halo adds. Measured, adding alone does not
+        // produce gold and cannot: a mark over the navy water came out at
+        // (1.00, 0.96, 0.94) against the reference's added light of
+        // (1.00, 0.82, 0.54), because what the eye sees is the drop *plus the
+        // water under it*, and enough blue under a warm light is a neutral.
+        //
+        // Which is also the physics. A drop catching the sun is not a haze over
+        // the scene, it is a lens imaging a source about five orders of
+        // magnitude brighter than a puddle — whatever was behind it does not
+        // survive. So the bright part of a mark takes the light's own colour
+        // outright, and only its glow is added to what is there.
+        vec3 core = measured * 1.18;
+        // Sharp rather than proportional: a mark either is the drop or is the
+        // glow around it, and a linear ramp spends most of its range on marks
+        // that are half water — which measured (1.00, 0.93, 0.86), still two
+        // thirds of the way to neutral.
+        lit = mix(lit, core, smoothstep(0.05, 0.32, strength) * 0.94);
+        lit += gold * strength * 0.30;
       }
 
       gl_FragColor = vec4(lit, 1.0);
